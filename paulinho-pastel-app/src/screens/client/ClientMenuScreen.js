@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { colors, spacing, radii } from '../../theme';
+import Button from '../../components/Button';
 
 const MOCK_PRODUCTS = [
   { id: '1', name: 'Pastel de Carne', desc: 'Carne moída temperada, azeitona e ovo.', price: 9.00 },
@@ -8,7 +9,15 @@ const MOCK_PRODUCTS = [
   { id: '3', name: 'Pastel Especial PP', desc: 'Frango, catupiry, bacon e milho.', price: 12.00 },
 ];
 
-export default function ClientMenuScreen() {
+export default function ClientMenuScreen({ navigation }) {
+  const [cart, setCart] = useState([]);
+
+  const addToCart = (product) => {
+    setCart([...cart, product]);
+  };
+
+  const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
+
   const renderItem = ({ item }) => (
     <View style={styles.card}>
       <View style={styles.cardInfo}>
@@ -18,7 +27,7 @@ export default function ClientMenuScreen() {
           R$ {item.price.toFixed(2).replace('.', ',')}
         </Text>
       </View>
-      <TouchableOpacity style={styles.addButton}>
+      <TouchableOpacity style={styles.addButton} onPress={() => addToCart(item)}>
         <Text style={styles.addButtonText}>+</Text>
       </TouchableOpacity>
     </View>
@@ -37,6 +46,20 @@ export default function ClientMenuScreen() {
         renderItem={renderItem}
         contentContainerStyle={styles.list}
       />
+
+      {cart.length > 0 && (
+        <View style={styles.footer}>
+          <View style={styles.cartInfo}>
+            <Text style={styles.cartCount}>{cart.length} itens</Text>
+            <Text style={styles.cartTotal}>R$ {cartTotal.toFixed(2).replace('.', ',')}</Text>
+          </View>
+          <Button 
+            title="Ver Carrinho" 
+            onPress={() => navigation.navigate('Cart', { cart, cartTotal })} 
+            style={styles.cartButton}
+          />
+        </View>
+      )}
     </View>
   );
 }
@@ -66,6 +89,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: spacing.lg,
+    paddingBottom: 100,
   },
   card: {
     backgroundColor: colors.surface,
@@ -113,5 +137,34 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     lineHeight: 28,
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.surface,
+    padding: spacing.lg,
+    paddingBottom: 40,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cartInfo: {
+    flex: 1,
+  },
+  cartCount: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  cartTotal: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  cartButton: {
+    width: 160,
   }
 });

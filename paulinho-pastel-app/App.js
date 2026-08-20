@@ -5,6 +5,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import LoginScreen from './src/screens/auth/LoginScreen';
 import ClientMenuScreen from './src/screens/client/ClientMenuScreen';
+import CartScreen from './src/screens/client/CartScreen';
+import CheckoutScreen from './src/screens/client/CheckoutScreen';
 import AdminFilaScreen from './src/screens/admin/AdminFilaScreen';
 
 const Stack = createNativeStackNavigator();
@@ -16,6 +18,8 @@ export default function App() {
         <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Login">
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="ClientMenu" component={ClientMenuScreen} />
+          <Stack.Screen name="Cart" component={CartScreen} />
+          <Stack.Screen name="Checkout" component={CheckoutScreen} />
           <Stack.Screen name="AdminFila" component={AdminFilaScreen} />
         </Stack.Navigator>
       </NavigationContainer>
