@@ -14,7 +14,7 @@ export default function CheckoutScreen({ route, navigation }) {
   const handleConfirmOrder = async () => {
     setLoading(true);
     try {
-      await createOrder(cart, cartTotal);
+      await createOrder(cart);
       Alert.alert('Sucesso!', 'Seu pedido foi enviado para a cozinha e já apitou pro Paulinho!');
       navigation.reset({
         index: 0,

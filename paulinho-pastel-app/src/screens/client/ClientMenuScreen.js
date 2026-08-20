@@ -15,10 +15,16 @@ export default function ClientMenuScreen({ navigation }) {
   }, []);
 
   const addToCart = (product) => {
-    setCart([...cart, product]);
+    setCart(prev => {
+      const existing = prev.find(p => p.id === product.id);
+      if (existing) {
+        return prev.map(p => p.id === product.id ? { ...p, quantity: (p.quantity || 1) + 1 } : p);
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
+  const cartTotal = cart.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
 
   const renderItem = ({ item }) => (
     <View style={styles.card}>
@@ -59,7 +65,7 @@ export default function ClientMenuScreen({ navigation }) {
       {cart.length > 0 && (
         <View style={styles.footer}>
           <View style={styles.cartInfo}>
-            <Text style={styles.cartCount}>{cart.length} itens</Text>
+            <Text style={styles.cartCount}>{cart.reduce((sum, item) => sum + (item.quantity || 1), 0)} itens</Text>
             <Text style={styles.cartTotal}>R$ {cartTotal.toFixed(2).replace('.', ',')}</Text>
           </View>
           <Button 

@@ -8,9 +8,9 @@ export default function CartScreen({ route, navigation }) {
 
   const renderItem = ({ item, index }) => (
     <View style={styles.card}>
-      <Text style={styles.productName}>{item.name}</Text>
+      <Text style={styles.productName}>{item.quantity}x {item.name}</Text>
       <Text style={styles.productPrice}>
-        R$ {item.price.toFixed(2).replace('.', ',')}
+        R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
       </Text>
     </View>
   );
