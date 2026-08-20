@@ -2,19 +2,12 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
 import Button from '../../components/Button';
 import { colors, spacing, radii } from '../../theme';
-import { auth } from '../../services/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { login, register } from '../../adapters/AuthAdapter';
 
 export default function LoginScreen({ navigation }) {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Transforma o número de celular em um e-mail falso para o Firebase
-  const getFakeEmail = () => {
-    const cleanPhone = phone.replace(/\D/g, '');
-    return `${cleanPhone}@paulinhopastel.com`;
-  };
 
   const handleLogin = async () => {
     if (!phone || !password) {
@@ -22,7 +15,6 @@ export default function LoginScreen({ navigation }) {
       return;
     }
     
-    // Regra de negócio hardcoded para o admin da demo
     const cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone === '999') {
       navigation.replace('AdminFila');
@@ -31,7 +23,7 @@ export default function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, getFakeEmail(), password);
+      await login(phone, password);
       navigation.replace('ClientMenu');
     } catch (error) {
       if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
@@ -51,7 +43,7 @@ export default function LoginScreen({ navigation }) {
     }
     setLoading(true);
     try {
-      await createUserWithEmailAndPassword(auth, getFakeEmail(), password);
+      await register(phone, password);
       Alert.alert('Sucesso!', 'Conta criada. Bem-vindo!');
       navigation.replace('ClientMenu');
     } catch (error) {

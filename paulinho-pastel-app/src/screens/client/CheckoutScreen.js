@@ -2,29 +2,18 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { colors, spacing, radii } from '../../theme';
 import Button from '../../components/Button';
-import { db, auth } from '../../services/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { createOrder } from '../../adapters/OrderAdapter';
 
 export default function CheckoutScreen({ route, navigation }) {
   const { cartTotal, cart } = route.params;
   const [loading, setLoading] = useState(false);
 
-  // Chave Pix do Paulinho (mock)
   const pixKey = 'paulinho@pastel.com.br';
 
   const handleConfirmOrder = async () => {
     setLoading(true);
     try {
-      // Salva o pedido no banco de dados em tempo real!
-      await addDoc(collection(db, 'orders'), {
-        client_id: auth.currentUser?.uid || 'anonimo',
-        client_email: auth.currentUser?.email || 'Sem login',
-        items: cart,
-        total: cartTotal,
-        status: 'received', // Pode ser: received, preparing, ready
-        created_at: serverTimestamp(),
-      });
-
+      await createOrder(cart, cartTotal);
       Alert.alert('Sucesso!', 'Seu pedido foi enviado para a cozinha e já apitou pro Paulinho!');
       navigation.reset({
         index: 0,

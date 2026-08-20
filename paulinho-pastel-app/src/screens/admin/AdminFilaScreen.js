@@ -1,35 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { colors, spacing, radii } from '../../theme';
-import { db } from '../../services/firebase';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { subscribeToOrders, updateOrderStatus } from '../../adapters/OrderAdapter';
 
 export default function AdminFilaScreen() {
   const [orders, setOrders] = useState([]);
 
-  // Escuta o banco de dados em tempo real
   useEffect(() => {
-    const q = query(collection(db, 'orders'), orderBy('created_at', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setOrders(ordersData);
-    });
-
+    const unsubscribe = subscribeToOrders(setOrders);
     return () => unsubscribe();
   }, []);
 
   const advanceStatus = async (orderId, currentStatus) => {
-    let nextStatus = '';
-    if (currentStatus === 'received') nextStatus = 'preparing';
-    else if (currentStatus === 'preparing') nextStatus = 'ready';
-    else return; // Se já está pronto, não faz nada por enquanto
-
-    await updateDoc(doc(db, 'orders', orderId), {
-      status: nextStatus
-    });
+    await updateOrderStatus(orderId, currentStatus);
   };
 
   const getStatusColor = (status) => {
