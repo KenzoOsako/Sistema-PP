@@ -38,8 +38,15 @@ export default function ClientMenuScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Cardápio</Text>
-        <Text style={styles.headerSubtitle}>Escolha seu pastel quentinho 🔥</Text>
+        <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+          <View>
+            <Text style={styles.headerTitle}>Cardápio</Text>
+            <Text style={styles.headerSubtitle}>Escolha seu pastel quentinho 🔥</Text>
+          </View>
+          <TouchableOpacity onPress={() => navigation.navigate('ClientOrders')}>
+            <Text style={{color: colors.primary, fontWeight: 'bold'}}>Meus Pedidos</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList

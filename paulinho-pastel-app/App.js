@@ -9,6 +9,7 @@ import LoginScreen from './src/screens/auth/LoginScreen';
 import ClientMenuScreen from './src/screens/client/ClientMenuScreen';
 import CartScreen from './src/screens/client/CartScreen';
 import CheckoutScreen from './src/screens/client/CheckoutScreen';
+import ClientOrderStatusScreen from './src/screens/client/ClientOrderStatusScreen';
 
 import AdminFilaScreen from './src/screens/admin/AdminFilaScreen';
 import AdminMenuScreen from './src/screens/admin/AdminMenuScreen';
@@ -42,6 +43,7 @@ export default function App() {
           <Stack.Screen name="ClientMenu" component={ClientMenuScreen} />
           <Stack.Screen name="Cart" component={CartScreen} />
           <Stack.Screen name="Checkout" component={CheckoutScreen} />
+          <Stack.Screen name="ClientOrders" component={ClientOrderStatusScreen} />
           <Stack.Screen name="AdminFila" component={AdminTabs} />
         </Stack.Navigator>
       </NavigationContainer>
