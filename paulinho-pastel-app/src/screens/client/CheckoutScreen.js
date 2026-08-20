@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { colors, spacing, radii } from '../../theme';
 import Button from '../../components/Button';
 import { createOrder } from '../../adapters/OrderAdapter';
@@ -37,7 +38,13 @@ export default function CheckoutScreen({ route, navigation }) {
 
       <View style={styles.content}>
         <View style={styles.pixBox}>
-          <Text style={styles.pixTitle}>Chave Pix (E-mail)</Text>
+          <Text style={styles.pixTitle}>QR Code Pix (E-mail)</Text>
+          <View style={{ marginVertical: spacing.md }}>
+            <QRCode 
+              value={`00020126330014br.gov.bcb.pix0111${pixKey}5204000053039865404${cartTotal.toFixed(2)}5802BR5915Paulinho Pastel6009Sao Paulo62070503***6304`}
+              size={150} 
+            />
+          </View>
           <Text style={styles.pixKey}>{pixKey}</Text>
           <Text style={styles.pixValue}>Valor: R$ {cartTotal.toFixed(2).replace('.', ',')}</Text>
           

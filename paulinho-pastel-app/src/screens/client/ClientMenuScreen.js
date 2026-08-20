@@ -3,14 +3,16 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import { colors, spacing, radii } from '../../theme';
 import Button from '../../components/Button';
 
-const MOCK_PRODUCTS = [
-  { id: '1', name: 'Pastel de Carne', desc: 'Carne moída temperada, azeitona e ovo.', price: 9.00 },
-  { id: '2', name: 'Pastel de Queijo', desc: 'Mussarela derretida, orégano.', price: 8.50 },
-  { id: '3', name: 'Pastel Especial PP', desc: 'Frango, catupiry, bacon e milho.', price: 12.00 },
-];
+import { subscribeToProducts } from '../../adapters/ProductAdapter';
 
 export default function ClientMenuScreen({ navigation }) {
   const [cart, setCart] = useState([]);
+  const [products, setProducts] = useState([]);
+
+  React.useEffect(() => {
+    const unsubscribe = subscribeToProducts(setProducts);
+    return () => unsubscribe();
+  }, []);
 
   const addToCart = (product) => {
     setCart([...cart, product]);
@@ -41,7 +43,7 @@ export default function ClientMenuScreen({ navigation }) {
       </View>
 
       <FlatList
-        data={MOCK_PRODUCTS}
+        data={products}
         keyExtractor={item => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
