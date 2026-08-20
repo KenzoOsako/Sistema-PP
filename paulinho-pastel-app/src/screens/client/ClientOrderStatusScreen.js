@@ -6,6 +6,7 @@ import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestor
 
 export default function ClientOrderStatusScreen({ navigation }) {
   const [myOrders, setMyOrders] = useState([]);
+  const [notifiedSet] = useState(new Set());
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -22,13 +23,14 @@ export default function ClientOrderStatusScreen({ navigation }) {
         ...doc.data()
       }));
 
-      // Simulação de Push Notification in-app se algum pedido acabou de ficar pronto
-      const hasNewlyReady = ordersData.find(o => o.status === 'ready' && !o.notified);
-      if (hasNewlyReady) {
-        Vibration.vibrate([1000, 500, 1000]);
-        Alert.alert('🔔 PI PI PI!', 'Seu pastel está pronto e quentinho! Pode ir retirar no balcão.');
-        // Aqui poderíamos marcar como notified no banco para não apitar duas vezes
-      }
+      // Simulação de Push Notification in-app seguro (Evita loop infinito)
+      ordersData.forEach(o => {
+        if (o.status === 'ready' && !notifiedSet.has(o.id)) {
+          notifiedSet.add(o.id);
+          Vibration.vibrate([1000, 500, 1000]);
+          Alert.alert('🔔 PI PI PI!', `O pedido ${o.id.slice(0, 5).toUpperCase()} está pronto e quentinho! Pode retirar.`);
+        }
+      });
 
       setMyOrders(ordersData);
     });
@@ -52,7 +54,7 @@ export default function ClientOrderStatusScreen({ navigation }) {
       
       <View style={styles.itemsList}>
         {item.items?.map((prod, i) => (
-          <Text key={i} style={styles.itemRow}>• {prod.name}</Text>
+          <Text key={i} style={styles.itemRow}>• {prod.quantity}x {prod.name}</Text>
         ))}
       </View>
 

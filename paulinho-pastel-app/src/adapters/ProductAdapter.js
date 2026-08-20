@@ -13,5 +13,12 @@ export const subscribeToProducts = (onUpdate) => {
 };
 
 export const createProduct = async (product) => {
-  return addDoc(collection(db, 'products'), product);
+  if (typeof product.name !== 'string' || product.name.trim() === '') throw new Error('Nome inválido.');
+  if (typeof product.price !== 'number' || product.price <= 0) throw new Error('Preço deve ser maior que zero.');
+  
+  return addDoc(collection(db, 'products'), {
+    name: product.name.trim(),
+    desc: typeof product.desc === 'string' ? product.desc.trim() : '',
+    price: product.price
+  });
 };

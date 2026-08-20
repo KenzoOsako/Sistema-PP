@@ -5,6 +5,7 @@ import { subscribeToOrders, updateOrderStatus } from '../../adapters/OrderAdapte
 
 export default function AdminFilaScreen() {
   const [orders, setOrders] = useState([]);
+  const [updatingId, setUpdatingId] = useState(null);
 
   useEffect(() => {
     const unsubscribe = subscribeToOrders(setOrders);
@@ -12,7 +13,14 @@ export default function AdminFilaScreen() {
   }, []);
 
   const advanceStatus = async (orderId, currentStatus) => {
-    await updateOrderStatus(orderId, currentStatus);
+    setUpdatingId(orderId);
+    try {
+      await updateOrderStatus(orderId, currentStatus);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   const getStatusColor = (status) => {
@@ -42,7 +50,7 @@ export default function AdminFilaScreen() {
 
       <View style={styles.itemsList}>
         {item.items?.map((prod, i) => (
-          <Text key={i} style={styles.itemRow}>• {prod.name}</Text>
+          <Text key={i} style={styles.itemRow}>• {prod.quantity}x {prod.name}</Text>
         ))}
       </View>
 
@@ -51,11 +59,12 @@ export default function AdminFilaScreen() {
         
         {item.status !== 'ready' && (
           <TouchableOpacity 
-            style={styles.actionButton} 
+            style={[styles.actionButton, updatingId === item.id && { opacity: 0.5 }]} 
             onPress={() => advanceStatus(item.id, item.status)}
+            disabled={updatingId === item.id}
           >
             <Text style={styles.actionButtonText}>
-              {item.status === 'received' ? 'Confirmar Pix e Fritar' : 'Marcar como Pronto'}
+              {updatingId === item.id ? 'Atualizando...' : (item.status === 'received' ? 'Confirmar Pix e Fritar' : 'Marcar como Pronto')}
             </Text>
           </TouchableOpacity>
         )}
