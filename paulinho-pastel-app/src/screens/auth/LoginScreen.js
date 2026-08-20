@@ -1,19 +1,67 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
 import Button from '../../components/Button';
 import { colors, spacing, radii } from '../../theme';
+import { auth } from '../../services/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 
 export default function LoginScreen({ navigation }) {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    // Lógica de autenticação com Firebase entrará aqui
-    // Por enquanto, vamos mockar a navegação:
-    if (phone === '999') {
-      navigation.replace('AdminFila'); // Fake Admin login
-    } else {
-      navigation.replace('ClientMenu'); // Fake Client login
+  // Transforma o número de celular em um e-mail falso para o Firebase
+  const getFakeEmail = () => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    return `${cleanPhone}@paulinhopastel.com`;
+  };
+
+  const handleLogin = async () => {
+    if (!phone || !password) {
+      Alert.alert('Erro', 'Preencha o celular e a senha!');
+      return;
+    }
+    
+    // Regra de negócio hardcoded para o admin da demo
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone === '999') {
+      navigation.replace('AdminFila');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, getFakeEmail(), password);
+      navigation.replace('ClientMenu');
+    } catch (error) {
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        Alert.alert('Conta não encontrada', 'Você ainda não tem cadastro. Clique em "Criar Conta".');
+      } else {
+        Alert.alert('Erro ao entrar', error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!phone || !password) {
+      Alert.alert('Erro', 'Preencha o celular e a senha para criar a conta!');
+      return;
+    }
+    setLoading(true);
+    try {
+      await createUserWithEmailAndPassword(auth, getFakeEmail(), password);
+      Alert.alert('Sucesso!', 'Conta criada. Bem-vindo!');
+      navigation.replace('ClientMenu');
+    } catch (error) {
+      if (error.code === 'auth/email-already-in-use') {
+        Alert.alert('Ops', 'Este número já está cadastrado. Faça login!');
+      } else {
+        Alert.alert('Erro ao criar conta', error.message);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -24,7 +72,6 @@ export default function LoginScreen({ navigation }) {
     >
       <View style={styles.content}>
         <View style={styles.logoContainer}>
-          {/* Aqui vai a logo do Paulinho Pastel depois */}
           <Text style={styles.logoText}>Paulinho Pastel</Text>
           <Text style={styles.subtitle}>Pule a fila, peça pelo celular.</Text>
         </View>
@@ -49,13 +96,19 @@ export default function LoginScreen({ navigation }) {
           />
 
           <View style={styles.buttonContainer}>
-            <Button title="Entrar" onPress={handleLogin} />
-            <Button 
-              title="Criar Conta" 
-              variant="outline" 
-              style={{ marginTop: spacing.md }} 
-              onPress={() => alert('Fluxo de cadastro em breve!')}
-            />
+            {loading ? (
+              <ActivityIndicator size="large" color={colors.primary} />
+            ) : (
+              <>
+                <Button title="Entrar" onPress={handleLogin} />
+                <Button 
+                  title="Criar Conta" 
+                  variant="outline" 
+                  style={{ marginTop: spacing.md }} 
+                  onPress={handleRegister}
+                />
+              </>
+            )}
           </View>
         </View>
       </View>
@@ -109,5 +162,7 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     marginTop: spacing.sm,
+    minHeight: 120,
+    justifyContent: 'center'
   }
 });
