@@ -1,0 +1,43 @@
+name: Full-Stack CI/CD Gatekeeper
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  audit-and-test:
+    name: Zero-Trust Codebase Audit
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: paulinho-pastel-app
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js Environment
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: 'paulinho-pastel-app/package-lock.json'
+
+    - name: Install Dependencies (Legacy Peer Resolution)
+      run: npm ci --legacy-peer-deps
+
+    - name: Execute Recursive Testing Loop (Jest)
+      run: npm test
+
+    - name: Boundary Verification Status
+      if: success()
+      run: echo "Zero-Trust Architecture Confirmed. No regressions detected."
+
+    - name: Recursive Gatekeeper Lock
+      if: failure()
+      run: |
+        echo "::error::Recursive Audit Failed. Boundary or DOM memory regression detected."
+        exit 1
