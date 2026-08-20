@@ -40,7 +40,7 @@ export default function CartScreen({ route, navigation }) {
         </View>
         <Button 
           title="Pagar com Pix"
-          onPress={() => navigation.navigate('Checkout', { cartTotal })}
+          onPress={() => navigation.navigate('Checkout', { cart, cartTotal })}
         />
       </View>
     </View>
