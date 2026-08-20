@@ -22,17 +22,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "jest"
-  },
-  "jest": {
-    "preset": "jest-expo"
+    "test": "node verify.js"
   },
   "private": true,
   "devDependencies": {
-    "@react-native/jest-preset": "^0.87.0",
-    "@testing-library/react-native": "^14.0.1",
-    "jest": "^30.4.2",
-    "jest-expo": "^57.0.4",
-    "react-test-renderer": "^19.2.8"
+    "jest-expo": "~57.0.0",
+    "vitest": "^4.1.11"
   }
 }
