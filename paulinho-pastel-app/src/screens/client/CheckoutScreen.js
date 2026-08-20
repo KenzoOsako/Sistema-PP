@@ -1,22 +1,40 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { colors, spacing, radii } from '../../theme';
 import Button from '../../components/Button';
+import { db, auth } from '../../services/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function CheckoutScreen({ route, navigation }) {
-  const { cartTotal } = route.params;
+  const { cartTotal, cart } = route.params;
+  const [loading, setLoading] = useState(false);
 
   // Chave Pix do Paulinho (mock)
   const pixKey = 'paulinho@pastel.com.br';
 
-  const handleConfirmOrder = () => {
-    // Aqui enviaremos o pedido para o Firebase (Fila do Admin)
-    Alert.alert('Sucesso!', 'Seu pedido foi enviado para a cozinha! Acompanhe o status.');
-    // Volta pro Menu limpo (ou para uma tela de Status de Pedido)
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'ClientMenu' }],
-    });
+  const handleConfirmOrder = async () => {
+    setLoading(true);
+    try {
+      // Salva o pedido no banco de dados em tempo real!
+      await addDoc(collection(db, 'orders'), {
+        client_id: auth.currentUser?.uid || 'anonimo',
+        client_email: auth.currentUser?.email || 'Sem login',
+        items: cart,
+        total: cartTotal,
+        status: 'received', // Pode ser: received, preparing, ready
+        created_at: serverTimestamp(),
+      });
+
+      Alert.alert('Sucesso!', 'Seu pedido foi enviado para a cozinha e já apitou pro Paulinho!');
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'ClientMenu' }],
+      });
+    } catch (error) {
+      Alert.alert('Erro ao enviar pedido', error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -50,10 +68,14 @@ export default function CheckoutScreen({ route, navigation }) {
       </View>
 
       <View style={styles.footer}>
-        <Button 
-          title="Já paguei, enviar pedido!"
-          onPress={handleConfirmOrder}
-        />
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} />
+        ) : (
+          <Button 
+            title="Já paguei, enviar pedido!"
+            onPress={handleConfirmOrder}
+          />
+        )}
       </View>
     </View>
   );
