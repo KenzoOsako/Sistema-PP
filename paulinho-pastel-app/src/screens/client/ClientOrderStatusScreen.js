@@ -86,6 +86,7 @@ export default function ClientOrderStatusScreen({ navigation }) {
     if (status === 'received') return 'Pedido Recebido (Aguardando Confirmação)';
     if (status === 'preparing') return 'No Fogo 🔥 (Fritando)';
     if (status === 'ready') return 'Pronto para Retirar ✅';
+    if (status === 'completed') return 'Retirado ✅';
     return 'Desconhecido';
   };
 

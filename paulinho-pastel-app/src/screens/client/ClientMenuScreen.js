@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SectionList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, Platform } from 'react-native';
 import { colors, spacing, radii, shadows } from '../../theme';
 import Button from '../../components/Button';
 import Header from '../../components/Header';
@@ -53,9 +53,6 @@ export default function ClientMenuScreen({ navigation }) {
   const [products, setProducts] = useState([]);
   const [activeCategory, setActiveCategory] = useState(CATEGORY_ORDER[0]);
   const sectionListRef = React.useRef(null);
-  // Posição Y de cada cabeçalho de seção (preenchida pelo onLayout do
-  // renderSectionHeader), usada pro scroll manual abaixo.
-  const sectionOffsets = React.useRef({});
 
   React.useEffect(() => {
     const unsubscribe = subscribeToProducts(setProducts);
@@ -75,23 +72,26 @@ export default function ClientMenuScreen({ navigation }) {
   // navegação num cardápio com 19 itens (sem isso era só rolar tudo manual).
   const handleTabPress = (category) => {
     setActiveCategory(category);
-    if (!sectionListRef.current) return;
 
-    // scrollToLocation (API "oficial" do SectionList) é pouco confiável no
-    // react-native-web — na prática o toque em "Doces" não rolava a lista.
-    // Usamos a posição Y real do cabeçalho (medida via onLayout abaixo) e
-    // rolamos o ScrollView interno diretamente, que é bem suportado em web.
-    const offsetY = sectionOffsets.current[category];
-    const scrollResponder = sectionListRef.current.getScrollResponder?.();
-    if (offsetY != null && scrollResponder?.scrollTo) {
-      scrollResponder.scrollTo({ y: offsetY, animated: true });
-      return;
+    // O app roda como PWA (web), então tanto no navegador do computador
+    // quanto no celular a lista é renderizada pelo react-native-web — e lá
+    // tanto scrollToLocation quanto o scrollTo via getScrollResponder se
+    // mostraram pouco confiáveis (o toque em "Doces" simplesmente não
+    // rolava nada). O jeito que realmente funciona em web é a API nativa do
+    // próprio navegador: cada cabeçalho de seção tem um nativeID (vira um
+    // id no DOM) e usamos scrollIntoView nele direto.
+    if (Platform.OS === 'web') {
+      const el = document.getElementById(`menu-section-${category}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
     }
 
-    // Fallback: ainda não temos a posição medida (ex.: primeiro render) —
-    // tenta o método padrão do SectionList.
+    // iOS/Android nativo (fora do navegador): scrollToLocation funciona bem
+    // de verdade, então usamos a API padrão do SectionList.
     const sectionIndex = sections.findIndex(s => s.title === category);
-    if (sectionIndex === -1) return;
+    if (sectionIndex === -1 || !sectionListRef.current) return;
     sectionListRef.current.scrollToLocation({
       sectionIndex,
       itemIndex: 0,
@@ -142,11 +142,7 @@ export default function ClientMenuScreen({ navigation }) {
   const renderSectionHeader = ({ section }) => (
     <View
       style={styles.sectionHeader}
-      onLayout={(e) => {
-        // Guarda a posição Y real do cabeçalho (relativa ao conteúdo
-        // rolável) pra podermos pular direto pra ele em handleTabPress.
-        sectionOffsets.current[section.title] = e.nativeEvent.layout.y;
-      }}
+      nativeID={`menu-section-${section.title}`}
     >
       <Text style={styles.sectionTitle}>{section.title}</Text>
       <View style={styles.sectionUnderline} />

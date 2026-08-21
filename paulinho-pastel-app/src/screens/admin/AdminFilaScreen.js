@@ -51,6 +51,7 @@ export default function AdminFilaScreen({ navigation }) {
     if (status === 'received') {
       return paymentMethod === 'on_pickup' ? 'Iniciar Preparo' : 'Confirmar Pix';
     }
+    if (status === 'ready') return 'Pago ✅';
     return 'Marcar Pronto';
   };
 
@@ -94,33 +95,40 @@ export default function AdminFilaScreen({ navigation }) {
       <View style={styles.cardFooter}>
         <Text style={styles.totalText}>R$ {item.total?.toFixed(2).replace('.', ',')}</Text>
 
-        {item.status !== 'ready' && (
-          <TouchableOpacity
-            style={[styles.actionButton, updatingId === item.id && { opacity: 0.5 }]}
-            onPress={() => advanceStatus(item.id, item.status)}
-            disabled={updatingId === item.id}
-          >
-            <Text style={styles.actionButtonText} numberOfLines={1}>
-              {updatingId === item.id ? 'Atualizando...' : getActionLabel(item.status, item.payment_method)}
-            </Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            item.status === 'ready' && styles.actionButtonPaid,
+            updatingId === item.id && { opacity: 0.5 },
+          ]}
+          onPress={() => advanceStatus(item.id, item.status)}
+          disabled={updatingId === item.id}
+        >
+          <Text style={styles.actionButtonText} numberOfLines={1}>
+            {updatingId === item.id ? 'Atualizando...' : getActionLabel(item.status, item.payment_method)}
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
 
+  // "completed" = já foi marcado como pago/retirado (botão "Pago ✅") — some
+  // da fila pra não acumular pedido antigo empurrando os novos pra baixo e
+  // obrigando o Paulinho a ficar rolando a tela no meio do corre.
+  const activeOrders = orders.filter(o => o.status !== 'completed');
+
   return (
     <View style={styles.container}>
-      <Header title="Fila do Paulinho 🧑‍🍳" subtitle={`${orders.length} pedidos na fila`} logo onLogout={handleLogout} />
+      <Header title="Fila do Paulinho 🧑‍🍳" subtitle={`${activeOrders.length} pedidos na fila`} logo onLogout={handleLogout} />
 
-      {orders.length === 0 ? (
+      {activeOrders.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyEmoji}>🧺</Text>
           <Text style={styles.emptyText}>Nenhum pedido na fila ainda.</Text>
         </View>
       ) : (
         <FlatList
-          data={orders}
+          data={activeOrders}
           keyExtractor={item => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
@@ -177,6 +185,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radii.full,
     maxWidth: '65%',
+  },
+  // Destaca o botão final ("Pago ✅") em verde — é a ação que tira o pedido
+  // da fila de vez, então vale diferenciar visualmente das outras (que só
+  // avançam o status).
+  actionButtonPaid: {
+    backgroundColor: colors.success,
   },
   actionButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 12 }
 });

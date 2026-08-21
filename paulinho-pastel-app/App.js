@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from './src/theme';
 import AppAlertModal from './src/components/AppAlertModal';
 
@@ -26,6 +26,15 @@ function TabIcon({ emoji }) {
 }
 
 function AdminTabs() {
+  // A barra fica fixa embaixo da tela (tabBarStyle sempre foi position
+  // absolute/fixed do React Navigation). Uma altura fixa de 64 não sobra
+  // espaço pra "barra de gestos"/home indicator dos celulares mais novos
+  // (iPhone sem botão físico, Android com navegação por gestos) — o SO
+  // desenha por cima dos últimos pixels e corta o texto/ícone. insets.bottom
+  // dá a altura exata dessa área segura em cada aparelho, então somamos ela
+  // à altura e ao padding em vez de usar um número fixo que só funciona em
+  // alguns celulares.
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={{
@@ -35,8 +44,8 @@ function AdminTabs() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 64,
-          paddingBottom: 10,
+          height: 54 + insets.bottom,
+          paddingBottom: Math.max(insets.bottom, 10),
           paddingTop: 8,
         },
         tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },

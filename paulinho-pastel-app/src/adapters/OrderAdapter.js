@@ -121,6 +121,10 @@ export const updateOrderStatus = async (orderId, currentStatus) => {
   let nextStatus = '';
   if (currentStatus === 'received') nextStatus = 'preparing';
   else if (currentStatus === 'preparing') nextStatus = 'ready';
+  // 'completed' = já foi pago/retirado. Some da fila do admin (ver
+  // AdminFilaScreen), mas continua contando nas estatísticas do Financeiro
+  // (AdminDashboardScreen não filtra por status).
+  else if (currentStatus === 'ready') nextStatus = 'completed';
   else return;
 
   await auth.currentUser?.getIdToken();

@@ -45,7 +45,10 @@ export default function AdminDashboardScreen({ navigation }) {
     }, 0);
   }, 0);
 
-  const deliveredCount = todayOrders.filter(o => o.status === 'ready').length;
+  // Conta tanto "ready" (pronto, aguardando retirada) quanto "completed"
+  // (já marcado como pago — ver AdminFilaScreen) como entregue, senão esse
+  // número cai assim que o Paulinho limpa a fila com o botão "Pago ✅".
+  const deliveredCount = todayOrders.filter(o => o.status === 'ready' || o.status === 'completed').length;
   const margin = totalSales > 0 ? (totalProfit / totalSales) * 100 : 0;
 
   // Pastel mais vendido do dia (por quantidade)
