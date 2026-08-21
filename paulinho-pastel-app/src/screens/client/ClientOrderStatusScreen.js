@@ -1,42 +1,86 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Vibration } from 'react-native';
-import { colors, spacing, radii } from '../../theme';
+import { View, Text, StyleSheet, FlatList, Vibration } from 'react-native';
+import { colors, spacing, radii, shadows } from '../../theme';
+import Button from '../../components/Button';
+import Header from '../../components/Header';
 import { db, auth } from '../../services/firebase';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { requestNotificationPermission, notifyOrderReady } from '../../services/notifications';
+import { showAlert } from '../../utils/showAlert';
 
 export default function ClientOrderStatusScreen({ navigation }) {
   const [myOrders, setMyOrders] = useState([]);
   const [notifiedSet] = useState(new Set());
 
   useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  useEffect(() => {
     if (!auth.currentUser) return;
 
-    const q = query(
-      collection(db, 'orders'), 
-      where('client_id', '==', auth.currentUser.uid),
-      orderBy('created_at', 'desc')
-    );
+    // Ver comentário completo em OrderAdapter.subscribeToOrders: um erro
+    // transitório (token expirado, rede instável) mata o listener pra
+    // sempre sem retry automático do Firestore — por isso reconecta sozinho
+    // em vez de só logar o erro, senão "Meus Pedidos" pode travar sem
+    // atualizar mesmo com pedidos novos chegando.
+    let currentUnsubscribe = null;
+    let stopped = false;
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ordersData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    const start = () => {
+      const q = query(
+        collection(db, 'orders'),
+        where('client_id', '==', auth.currentUser.uid),
+        orderBy('created_at', 'desc')
+      );
 
-      // Simulação de Push Notification in-app seguro (Evita loop infinito)
-      ordersData.forEach(o => {
-        if (o.status === 'ready' && !notifiedSet.has(o.id)) {
-          notifiedSet.add(o.id);
-          Vibration.vibrate([1000, 500, 1000]);
-          Alert.alert('🔔 PI PI PI!', `O pedido ${o.id.slice(0, 5).toUpperCase()} está pronto e quentinho! Pode retirar.`);
-        }
+      currentUnsubscribe = onSnapshot(q, (snapshot) => {
+        const ordersData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        // Notificação push real (dispara mesmo com o app em segundo plano) +
+        // reforço in-app (vibração e alerta) para quem estiver com a tela aberta.
+        ordersData.forEach(o => {
+          if (o.status === 'ready' && !notifiedSet.has(o.id)) {
+            notifiedSet.add(o.id);
+            Vibration.vibrate([1000, 500, 1000]);
+            notifyOrderReady(o.id);
+            showAlert('🔔 PI PI PI!', `O pedido ${o.id.slice(0, 5).toUpperCase()} está pronto e quentinho! Pode retirar.`);
+          }
+        });
+
+        setMyOrders(ordersData);
+      }, async (error) => {
+        console.error('Erro ao ouvir meus pedidos em tempo real — reconectando:', error);
+        if (stopped) return;
+        try { await auth.currentUser?.getIdToken(true); } catch (e) { /* ignora, tenta mesmo assim */ }
+        setTimeout(() => { if (!stopped) start(); }, 3000);
       });
+    };
 
-      setMyOrders(ordersData);
-    });
+    start();
 
-    return () => unsubscribe();
+    return () => {
+      stopped = true;
+      if (currentUnsubscribe) currentUnsubscribe();
+    };
   }, []);
+
+  const lastOrder = myOrders[0];
+
+  const handleRepeatOrder = () => {
+    if (!lastOrder?.items?.length) return;
+    const repeatedCart = lastOrder.items.map(item => ({
+      id: item.productId,
+      name: item.name,
+      price: item.unit_price_at_time_of_sale,
+      quantity: item.quantity,
+    }));
+    const repeatedTotal = repeatedCart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    navigation.navigate('Cart', { cart: repeatedCart, cartTotal: repeatedTotal });
+  };
 
   const getStatusText = (status) => {
     if (status === 'received') return 'Pedido Recebido (Aguardando Confirmação)';
@@ -51,7 +95,7 @@ export default function ClientOrderStatusScreen({ navigation }) {
         <Text style={styles.orderId}>Pedido {item.id.slice(0, 5).toUpperCase()}</Text>
         <Text style={styles.totalText}>R$ {item.total?.toFixed(2).replace('.', ',')}</Text>
       </View>
-      
+
       <View style={styles.itemsList}>
         {item.items?.map((prod, i) => (
           <Text key={i} style={styles.itemRow}>• {prod.quantity}x {prod.name}</Text>
@@ -66,12 +110,13 @@ export default function ClientOrderStatusScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Cardápio</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Meus Pedidos</Text>
-      </View>
+      <Header title="Meus Pedidos" onBack={() => navigation.goBack()} />
+
+      {lastOrder && (
+        <View style={styles.repeatBox}>
+          <Button title="🔁 Repetir último pedido" variant="outline" onPress={handleRepeatOrder} />
+        </View>
+      )}
 
       {myOrders.length === 0 ? (
         <View style={styles.emptyState}>
@@ -91,12 +136,10 @@ export default function ClientOrderStatusScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { paddingTop: 60, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: '#E5E5E5' },
-  backButton: { fontSize: 16, color: colors.primary, marginBottom: spacing.sm, fontWeight: 'bold' },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: colors.text },
   list: { padding: spacing.lg },
+  repeatBox: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  card: { backgroundColor: colors.surface, borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.md, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  card: { backgroundColor: colors.surface, borderRadius: radii.md, padding: spacing.md, marginBottom: spacing.md, ...shadows.card },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   orderId: { fontSize: 16, fontWeight: '900', color: colors.text },
   totalText: { fontSize: 16, fontWeight: 'bold', color: colors.primary },
