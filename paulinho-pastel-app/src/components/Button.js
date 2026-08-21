@@ -1,10 +1,10 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { colors, spacing, radii } from '../theme';
+import { colors, spacing, radii, shadows } from '../theme';
 
 export default function Button({ title, onPress, variant = 'primary', style }) {
   const isPrimary = variant === 'primary';
-  
+
   return (
     <TouchableOpacity
       style={[
@@ -33,6 +33,7 @@ const styles = StyleSheet.create({
   },
   primary: {
     backgroundColor: colors.primary,
+    ...shadows.button,
   },
   outline: {
     backgroundColor: 'transparent',

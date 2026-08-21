@@ -1,24 +1,31 @@
 {
   "expo": {
-    "name": "paulinho-pastel-app",
+    "name": "Paulinho Pastel",
     "slug": "paulinho-pastel-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "backgroundColor": "#FAFAF9",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F97316",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "Paulinho Pastel",
+      "shortName": "Paulinho Pastel",
+      "themeColor": "#F97316",
+      "backgroundColor": "#FAFAF9",
+      "display": "standalone",
+      "lang": "pt-BR"
     }
   }
 }
