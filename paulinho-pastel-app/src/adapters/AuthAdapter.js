@@ -4,20 +4,20 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, up
 // sobre por que essas leituras/escritas pontuais usam dbLite em vez de db.
 import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
 import { withTimeout } from '../utils/withTimeout';
-import { ADMIN_PHONE } from '../config';
+import { ADMIN_PHONES } from '../config';
 
 // Hexagonal Port Adapter: Isola o Firebase das telas React (SOLID, Kenzo Standard)
 //
 // SEGURANÇA: não existe mais bypass por número de telefone mágico ("999").
 // Todo login passa pelo Firebase Auth de verdade. O papel (role: client | admin)
 // fica salvo em Firestore (`users/{uid}`) e é definido no cadastro: sempre
-// "client", EXCETO pra um único telefone específico (ADMIN_PHONE, o número
-// de verdade do Paulinho) que já nasce "admin" — assim ele se cadastra pelo
-// próprio app, com a senha que ele mesmo escolher, e já cai direto no painel
-// admin, sem precisar de ninguém promover manualmente pelo console. Qualquer
-// outro telefone SEMPRE cai como "client", e essa mesma regra é espelhada no
-// firestore.rules (users/{userId} allow create), então nem burlando o app
-// alguém consegue se auto-promover usando outro número.
+// "client", EXCETO pros telefones em ADMIN_PHONES (o número de verdade do
+// Paulinho + a credencial mestra do time) que já nascem "admin" — cada um se
+// cadastra pelo próprio app, com a senha que escolher, e já cai direto no
+// painel admin, sem precisar de ninguém promover manualmente pelo console.
+// Qualquer outro telefone SEMPRE cai como "client", e essa mesma lista é
+// espelhada no firestore.rules (users/{userId} allow create), então nem
+// burlando o app alguém consegue se auto-promover usando outro número.
 //
 // Exceção só pra dev local: quem não tem acesso ao console do Firebase ainda
 // consegue testar o painel admin. Não é bypass de login — a conta precisa
@@ -73,9 +73,9 @@ export const register = async ({ name, email, phone, password }) => {
     // (mesmo a conta já existindo de verdade). Esperar getIdToken() aqui
     // garante que o token já está pronto antes da chamada.
     await credential.user.getIdToken();
-    // Único telefone que já nasce admin é o do Paulinho de verdade
-    // (ADMIN_PHONE); qualquer outro número é sempre "client".
-    const role = cleanPhone === ADMIN_PHONE ? 'admin' : 'client';
+    // Só os telefones em ADMIN_PHONES (Paulinho + credencial mestra) já
+    // nascem admin; qualquer outro número é sempre "client".
+    const role = ADMIN_PHONES.includes(cleanPhone) ? 'admin' : 'client';
     await withTimeout(
       setDoc(doc(dbLite, 'users', credential.user.uid), {
         name: name.trim(),
@@ -100,7 +100,9 @@ export const logout = () => signOut(auth);
 
 // Retorna 'admin' ou 'client'. Usuários sem documento em Firestore
 // (ex.: contas antigas criadas antes desta mudança) caem em 'client' por padrão,
-// o que é o comportamento seguro (nega acesso admin por padrão).
+// o que é o comportamento seguro (nega acesso admin por padrão) — EXCETO
+// quando o telefone da própria conta é um dos ADMIN_PHONES, caso em que a
+// gente recria o documento faltante na hora (ver comentário abaixo).
 export const getUserRole = async (uid) => {
   if (__DEV__ && isDevAdminPhone(auth.currentUser?.email)) {
     return 'admin';
@@ -111,10 +113,35 @@ export const getUserRole = async (uid) => {
     // por request.auth vir nulo bem no instante seguinte ao login.
     await auth.currentUser?.getIdToken();
     const snap = await withTimeout(getDoc(doc(dbLite, 'users', uid)));
-    if (snap.exists() && snap.data().role === 'admin') {
-      return 'admin';
+    if (snap.exists()) {
+      return snap.data().role === 'admin' ? 'admin' : 'client';
     }
-    return 'client';
+
+    // Autocura: o documento em users/{uid} não existe, mas a conta de
+    // login (Firebase Auth) existe de verdade — isso só acontece quando o
+    // setDoc lá no cadastro (register(), acima) falhou silenciosamente
+    // (rede ruim/instável, ex.: wifi de faculdade) e caiu no catch que
+    // não derruba o cadastro de propósito. Antes disso, a conta ficava
+    // "client" pra sempre, mesmo sendo o telefone certo de admin — foi
+    // exatamente esse o bug do login de admin "não funcionar" numa rede
+    // ruim. Em vez de só aceitar isso, recriamos o documento agora, com o
+    // role correto baseado no telefone da própria conta logada.
+    const phoneDigits = (auth.currentUser?.email || '').split('@')[0];
+    const role = ADMIN_PHONES.includes(phoneDigits) ? 'admin' : 'client';
+    try {
+      await withTimeout(setDoc(doc(dbLite, 'users', uid), {
+        name: auth.currentUser?.displayName || '',
+        email: auth.currentUser?.email || '',
+        phone: phoneDigits,
+        role,
+      }));
+    } catch (e) {
+      // Se essa segunda tentativa também falhar (rede ainda ruim), não tem
+      // problema: a gente ainda retorna o role certo pra essa sessão login
+      // atual, e a autocura tenta de novo sozinha no próximo login.
+      console.warn('Autocura do documento de usuário falhou, tenta de novo no próximo login:', e.message);
+    }
+    return role;
   } catch (e) {
     console.error('Erro ao buscar papel do usuário:', e);
     return 'client';

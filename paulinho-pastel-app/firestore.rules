@@ -38,18 +38,21 @@ service cloud.firestore {
     // Perfil do usuário: cada um só lê/edita o próprio documento,
     // e nunca pode alterar o próprio campo "role".
     //
-    // Exceção controlada: quem se cadastra com o telefone de verdade do
-    // Paulinho (o número abaixo, o mesmo de ADMIN_PHONE em src/config.js)
-    // pode criar o próprio documento já como "admin" — é assim que ele vira
-    // admin só de se cadastrar pelo app, sem promoção manual no console.
-    // Qualquer outro telefone só pode criar como "client"; não dá pra burlar
-    // isso direto no app, porque quem decide é essa regra no servidor, não
-    // o código do cliente.
+    // Exceção controlada: quem se cadastra com um dos telefones abaixo (o
+    // mesmo conjunto de ADMIN_PHONES em src/config.js — o número de verdade
+    // do Paulinho + a credencial mestra do time) pode criar o próprio
+    // documento já como "admin" — é assim que se vira admin só de se
+    // cadastrar pelo app, sem promoção manual no console. Qualquer outro
+    // telefone só pode criar como "client"; não dá pra burlar isso direto no
+    // app, porque quem decide é essa regra no servidor, não o código do
+    // cliente.
     match /users/{userId} {
       allow read: if isSignedIn() && request.auth.uid == userId;
       allow create: if isSignedIn() && request.auth.uid == userId &&
         (request.resource.data.role == 'client' ||
-         (request.resource.data.role == 'admin' && request.resource.data.phone == '19987011974'));
+         (request.resource.data.role == 'admin' &&
+          (request.resource.data.phone == '19987011974' ||
+           request.resource.data.phone == '99999999999')));
       allow update: if isSignedIn() && request.auth.uid == userId &&
         request.resource.data.role == resource.data.role;
       allow delete: if false;

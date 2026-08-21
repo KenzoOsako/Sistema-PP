@@ -16,5 +16,18 @@ export const PIX_MERCHANT_CITY = 'Sao Paulo';
 // divergir no futuro (ex.: Paulinho troca de celular mas mantém a chave
 // Pix antiga cadastrada no nome dele). Quem se cadastra com esse telefone
 // exato já vira admin automaticamente (ver AuthAdapter.register e a regra
-// espelhada em firestore.rules — nenhum outro telefone consegue isso).
+// espelhada em firestore.rules).
 export const ADMIN_PHONE = '19987011974';
+
+// Credencial "mestra" reservada pro time (Felipe/Kenzo) conseguir entrar no
+// painel admin de qualquer lugar — celular emprestado, PC da faculdade, etc.
+// — sem depender do telefone/senha do Paulinho. Não é um número de verdade,
+// é só um identificador reservado que também vira admin automaticamente ao
+// se cadastrar, do mesmo jeito que ADMIN_PHONE. Cada um escolhe a própria
+// senha no cadastro — ninguém, nem o Claude, guarda ou digita ela.
+export const ADMIN_MASTER_PHONE = '99999999999';
+
+// Qualquer telefone dessa lista vira admin automaticamente ao se cadastrar.
+// Nenhum outro cai como admin — é essa lista (e a cópia dela em
+// firestore.rules) que decide, não o app.
+export const ADMIN_PHONES = [ADMIN_PHONE, ADMIN_MASTER_PHONE];
