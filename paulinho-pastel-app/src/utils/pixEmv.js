@@ -7,6 +7,15 @@
 // 2. Faltava o checksum CRC16-CCITT no final, sem o qual nenhum app bancário
 //    reconhece o QR Code como válido.
 
+// Chaves Pix do tipo telefone ficam registradas no DICT do Banco Central no
+// formato internacional E.164 (+55DDDNUMERO), independente de como a chave é
+// exibida/copiada pro usuário (local, sem +55). Sem esse prefixo no payload
+// EMV, o QR gerado não bate com a chave de fato cadastrada e o pagamento falha.
+export function toDictPhoneKey(localDigits) {
+  const digits = String(localDigits).replace(/\D/g, '');
+  return `+55${digits}`;
+}
+
 function removeAccents(str) {
   return str
     .normalize('NFD')

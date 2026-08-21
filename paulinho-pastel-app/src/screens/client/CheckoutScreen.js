@@ -5,7 +5,8 @@ import { colors, spacing, radii, shadows } from '../../theme';
 import Button from '../../components/Button';
 import Header from '../../components/Header';
 import { createOrder } from '../../adapters/OrderAdapter';
-import { generatePixPayload } from '../../utils/pixEmv';
+import { generatePixPayload, toDictPhoneKey } from '../../utils/pixEmv';
+import { maskPhone } from '../../utils/phoneMask';
 import { PIX_KEY, PIX_MERCHANT_NAME, PIX_MERCHANT_CITY } from '../../config';
 import { showAlert } from '../../utils/showAlert';
 
@@ -13,9 +14,16 @@ export default function CheckoutScreen({ route, navigation }) {
   const { cartTotal, cart } = route.params;
   const [loading, setLoading] = useState(false);
 
+  // Chave crua (só dígitos, sem +55) — é o que copiamos pro clipboard, já
+  // que é assim que a maioria dos apps de banco espera colar uma chave de
+  // telefone digitada manualmente.
   const pixKey = PIX_KEY;
+  // Versão bonita pra exibir na tela: (19) 98701-1974.
+  const pixKeyDisplay = maskPhone(pixKey);
   const pixPayload = generatePixPayload({
-    pixKey,
+    // O payload EMV do QR precisa do formato internacional (+55...) exigido
+    // pelo DICT do Banco Central — só aqui, não na exibição/cópia.
+    pixKey: toDictPhoneKey(pixKey),
     merchantName: PIX_MERCHANT_NAME,
     merchantCity: PIX_MERCHANT_CITY,
     amount: cartTotal,
@@ -57,7 +65,7 @@ export default function CheckoutScreen({ route, navigation }) {
               size={150}
             />
           </View>
-          <Text style={styles.pixKey}>{pixKey}</Text>
+          <Text style={styles.pixKey}>{pixKeyDisplay}</Text>
           <Text style={styles.pixValue}>Valor: R$ {cartTotal.toFixed(2).replace('.', ',')}</Text>
 
           <Button
