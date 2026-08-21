@@ -8,6 +8,19 @@ jest.mock('../../../adapters/ProductAdapter', () => ({
   subscribeToProducts: jest.fn()
 }));
 
+// ClientMenuScreen também importa AuthAdapter (só pelo logout()), que por sua
+// vez importa services/firebase.js — sem mockar isso, o teste acaba
+// inicializando um app Firebase de VERDADE (initializeApp/getAuth) durante o
+// render. Nesse ambiente de teste (sem AsyncStorage, sem IndexedDB) isso
+// gera uma promise rejeitada sem tratamento nos bastidores do SDK, que o
+// Node (unhandled-rejections=throw por padrão desde a v15) trata como erro
+// fatal e derruba o processo inteiro — foi exatamente o que quebrava o job
+// "Zero-Trust Codebase Audit" no CI. Mockar AuthAdapter isola o componente
+// de qualquer inicialização real do Firebase.
+jest.mock('../../../adapters/AuthAdapter', () => ({
+  logout: jest.fn(),
+}));
+
 describe('ClientMenuScreen (Memory & Reducer Check)', () => {
   it('groups duplicate products by incrementing quantity instead of mutating list length', async () => {
     // Provide a mocked product
