@@ -1,9 +1,11 @@
 // Configuração central do app.
 //
 // Chave Pix real do Paulinho (telefone), cadastrada no Mercado Pago em nome
-// de Paulo César da Silva. Chave-telefone precisa do código do país (+55)
-// no formato que o Banco Central exige pro payload EMV — sem o +55 o QR
-// gerado não bate com a chave de fato registrada no DICT.
-export const PIX_KEY = '+5519987011974';
+// de Paulo César da Silva. Guardada aqui no formato local (sem +55), que é
+// como o Paulinho de fato vê/copia a chave (igual digitaria escolhendo
+// "telefone" no próprio banco). O +55 exigido pelo Banco Central no payload
+// EMV do QR Code é adicionado só na hora de gerar o QR, via
+// toDictPhoneKey() em src/utils/pixEmv.js.
+export const PIX_KEY = '19987011974';
 export const PIX_MERCHANT_NAME = 'Paulo Cesar da Silva';
 export const PIX_MERCHANT_CITY = 'Sao Paulo';

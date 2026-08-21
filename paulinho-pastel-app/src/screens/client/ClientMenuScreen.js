@@ -53,6 +53,9 @@ export default function ClientMenuScreen({ navigation }) {
   const [products, setProducts] = useState([]);
   const [activeCategory, setActiveCategory] = useState(CATEGORY_ORDER[0]);
   const sectionListRef = React.useRef(null);
+  // Posição Y de cada cabeçalho de seção (preenchida pelo onLayout do
+  // renderSectionHeader), usada pro scroll manual abaixo.
+  const sectionOffsets = React.useRef({});
 
   React.useEffect(() => {
     const unsubscribe = subscribeToProducts(setProducts);
@@ -72,8 +75,23 @@ export default function ClientMenuScreen({ navigation }) {
   // navegação num cardápio com 19 itens (sem isso era só rolar tudo manual).
   const handleTabPress = (category) => {
     setActiveCategory(category);
+    if (!sectionListRef.current) return;
+
+    // scrollToLocation (API "oficial" do SectionList) é pouco confiável no
+    // react-native-web — na prática o toque em "Doces" não rolava a lista.
+    // Usamos a posição Y real do cabeçalho (medida via onLayout abaixo) e
+    // rolamos o ScrollView interno diretamente, que é bem suportado em web.
+    const offsetY = sectionOffsets.current[category];
+    const scrollResponder = sectionListRef.current.getScrollResponder?.();
+    if (offsetY != null && scrollResponder?.scrollTo) {
+      scrollResponder.scrollTo({ y: offsetY, animated: true });
+      return;
+    }
+
+    // Fallback: ainda não temos a posição medida (ex.: primeiro render) —
+    // tenta o método padrão do SectionList.
     const sectionIndex = sections.findIndex(s => s.title === category);
-    if (sectionIndex === -1 || !sectionListRef.current) return;
+    if (sectionIndex === -1) return;
     sectionListRef.current.scrollToLocation({
       sectionIndex,
       itemIndex: 0,
@@ -122,7 +140,14 @@ export default function ClientMenuScreen({ navigation }) {
   };
 
   const renderSectionHeader = ({ section }) => (
-    <View style={styles.sectionHeader}>
+    <View
+      style={styles.sectionHeader}
+      onLayout={(e) => {
+        // Guarda a posição Y real do cabeçalho (relativa ao conteúdo
+        // rolável) pra podermos pular direto pra ele em handleTabPress.
+        sectionOffsets.current[section.title] = e.nativeEvent.layout.y;
+      }}
+    >
       <Text style={styles.sectionTitle}>{section.title}</Text>
       <View style={styles.sectionUnderline} />
     </View>
