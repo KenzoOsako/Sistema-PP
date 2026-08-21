@@ -62,7 +62,10 @@ export default function ClientMenuScreen({ navigation }) {
   // Fallback pra demo: se o admin ainda não cadastrou produtos reais no Firestore,
   // mostra um cardápio mockado só pra não ficar vazio.
   const isMockMenu = products.length === 0;
-  const displayProducts = products.length > 0 ? products : MOCK_PRODUCTS;
+  // "Pausado" (active: false) = acabou o ingrediente etc. — some da vitrine
+  // do cliente sem precisar excluir o cadastro (o admin reativa depois).
+  const availableProducts = products.filter(p => p.active !== false);
+  const displayProducts = products.length > 0 ? availableProducts : MOCK_PRODUCTS;
   const sections = groupByCategory(displayProducts);
 
   // Toque na aba "Salgados"/"Doces" pula direto pra seção — melhora a
@@ -172,6 +175,13 @@ export default function ClientMenuScreen({ navigation }) {
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         stickySectionHeadersEnabled
         contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          !isMockMenu ? (
+            <View style={styles.pausedEmptyState}>
+              <Text style={styles.pausedEmptyText}>Todos os pastéis estão pausados no momento. Volta já já! 🥟</Text>
+            </View>
+          ) : null
+        }
       />
       {cart.length > 0 && (
         <View style={styles.footer}>
@@ -217,7 +227,9 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   tabText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   tabTextActive: { color: colors.surface },
-  list: { padding: spacing.lg, paddingBottom: 100 },
+  list: { padding: spacing.lg, paddingBottom: 100, flexGrow: 1 },
+  pausedEmptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: spacing.xxl },
+  pausedEmptyText: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', paddingHorizontal: spacing.lg },
   sectionHeader: {
     backgroundColor: colors.background,
     paddingTop: spacing.md,

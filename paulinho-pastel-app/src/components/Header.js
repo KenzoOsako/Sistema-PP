@@ -2,22 +2,31 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { colors, spacing, radii, shadows } from '../theme';
 
-const WEEKDAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+const WEEKDAYS_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-function todayLabel() {
+function todayParts() {
   const now = new Date();
   const dd = String(now.getDate()).padStart(2, '0');
   const mm = String(now.getMonth() + 1).padStart(2, '0');
-  return `${WEEKDAYS[now.getDay()]} · ${dd}/${mm}`;
+  return { weekday: WEEKDAYS_SHORT[now.getDay()], date: `${dd}/${mm}` };
 }
 
 // App bar reutilizável usada em todas as telas — garante visual consistente
 // (mesma altura, sombra e tipografia) em vez de repetir o header em cada screen.
+//
+// O selo de data era uma faixa retangular full-width (aprovada como "fora do
+// design" pelo Paulinho — preview enviado e aprovado antes de mexer aqui,
+// já que este componente é compartilhado por TODAS as telas). Virou um selo
+// em meia-lua centralizado, "pendurado" por cima do header em vez de dividir
+// a tela em faixas.
 export default function Header({ title, subtitle, onBack, right, logo, onLogout }) {
+  const { weekday, date } = todayParts();
   return (
-    <View>
-      <View style={styles.dateStrip}>
-        <Text style={styles.dateStripText}>{todayLabel()}</Text>
+    <View style={styles.container}>
+      <View style={styles.statusBarSpacer} />
+      <View style={styles.dateBadge}>
+        <Text style={styles.dateBadgeDay}>{weekday}</Text>
+        <Text style={styles.dateBadgeNum}>{date}</Text>
       </View>
       <View style={styles.header}>
         <View style={styles.left}>
@@ -58,17 +67,38 @@ export default function Header({ title, subtitle, onBack, right, logo, onLogout 
 }
 
 const styles = StyleSheet.create({
-  dateStrip: {
-    backgroundColor: colors.primary,
-    paddingTop: 44,
-    paddingBottom: 8,
+  container: { position: 'relative' },
+  // Espaço reservado full-width pra área de status bar/notch — o selo por
+  // cima é só um acento visual, não substitui essa área de segurança.
+  statusBarSpacer: { height: 44, backgroundColor: colors.surface },
+  dateBadge: {
+    position: 'absolute',
+    top: 0,
+    left: '50%',
+    transform: [{ translateX: -60 }],
+    width: 120,
+    height: 56,
+    backgroundColor: colors.primaryDark,
+    borderBottomLeftRadius: 60,
+    borderBottomRightRadius: 60,
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 9,
+    zIndex: 20,
+    ...shadows.button,
   },
-  dateStripText: {
-    color: colors.surface,
-    fontSize: 12,
+  dateBadgeDay: {
+    color: '#FFE3CC',
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 1,
+  },
+  dateBadgeNum: {
+    color: colors.surface,
+    fontSize: 15,
+    fontWeight: '900',
   },
   header: {
     paddingTop: spacing.md,
