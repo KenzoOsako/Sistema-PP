@@ -61,7 +61,7 @@ export default function AdminDashboardScreen({ navigation }) {
     <View style={styles.container}>
       <Header title="Financeiro Hoje 📊" logo onLogout={handleLogout} />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.heroCard}>
           <Text style={styles.heroLabel}>💰 VENDAS DE HOJE</Text>
           <Text style={styles.heroValue} numberOfLines={1} adjustsFontSizeToFit>
@@ -112,6 +112,12 @@ export default function AdminDashboardScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  // Sem "flex: 1" aqui, o ScrollView não sabia sua própria altura no web e
+  // crescia junto com o conteúdo em vez de rolar internamente — resultado:
+  // uma barra de rolagem "extra" (a da página inteira, por fora do app),
+  // além da barra normal da lista. Travando a altura no container pai, só
+  // sobra a rolagem interna esperada.
+  scroll: { flex: 1 },
   content: { padding: spacing.lg },
   heroCard: {
     backgroundColor: colors.text,

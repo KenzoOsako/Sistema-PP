@@ -2,7 +2,7 @@ import { db, dbLite, auth } from '../services/firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 // SDK Lite (REST avulso, sem canal de streaming) pras operações pontuais —
 // ver comentário em firebase.js. onSnapshot continua no db normal acima.
-import { collection as collectionLite, addDoc, deleteDoc, doc as docLite } from 'firebase/firestore/lite';
+import { collection as collectionLite, addDoc, updateDoc, deleteDoc, doc as docLite } from 'firebase/firestore/lite';
 import { withTimeout } from '../utils/withTimeout';
 
 export const subscribeToProducts = (onUpdate) => {
@@ -43,6 +43,7 @@ export const createProduct = async (product) => {
   const cost = typeof product.cost === 'number' && product.cost >= 0 ? product.cost : 0;
 
   const category = product.category === 'Doces' ? 'Doces' : 'Salgados';
+  const active = typeof product.active === 'boolean' ? product.active : true;
 
   await auth.currentUser?.getIdToken();
   return withTimeout(addDoc(collectionLite(dbLite, 'products'), {
@@ -51,7 +52,22 @@ export const createProduct = async (product) => {
     price: product.price,
     cost, // custo estimado de ingredientes, usado para calcular lucro no dashboard
     category, // 'Salgados' | 'Doces' — agrupa o cardápio do cliente em seções
+    active, // false = "pausado" (acabou o ingrediente etc.), some do cardápio do cliente
   }));
+};
+
+// Edição de um pastel já cadastrado (preço, descrição, custo) e o toggle de
+// "pausar/ativar" (usa isso passando só { active: false/true }) — mesmo
+// endpoint, porque os dois são só um update parcial do mesmo documento.
+export const updateProduct = async (id, updates) => {
+  if (updates.name !== undefined && (typeof updates.name !== 'string' || updates.name.trim() === '')) {
+    throw new Error('Nome inválido.');
+  }
+  if (updates.price !== undefined && (typeof updates.price !== 'number' || updates.price <= 0)) {
+    throw new Error('Preço deve ser maior que zero.');
+  }
+  await auth.currentUser?.getIdToken();
+  return withTimeout(updateDoc(docLite(dbLite, 'products', id), updates));
 };
 
 export const deleteProduct = async (id) => {
