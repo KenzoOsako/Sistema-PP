@@ -4,14 +4,20 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, up
 // sobre por que essas leituras/escritas pontuais usam dbLite em vez de db.
 import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
 import { withTimeout } from '../utils/withTimeout';
+import { ADMIN_PHONE } from '../config';
 
 // Hexagonal Port Adapter: Isola o Firebase das telas React (SOLID, Kenzo Standard)
 //
 // SEGURANÇA: não existe mais bypass por número de telefone mágico ("999").
 // Todo login passa pelo Firebase Auth de verdade. O papel (role: client | admin)
-// fica salvo em Firestore (`users/{uid}`) e é definido no cadastro (sempre "client")
-// ou promovido manualmente no console do Firebase para a conta do Paulinho —
-// nunca pelo próprio app, para que um usuário não possa se auto-promover a admin.
+// fica salvo em Firestore (`users/{uid}`) e é definido no cadastro: sempre
+// "client", EXCETO pra um único telefone específico (ADMIN_PHONE, o número
+// de verdade do Paulinho) que já nasce "admin" — assim ele se cadastra pelo
+// próprio app, com a senha que ele mesmo escolher, e já cai direto no painel
+// admin, sem precisar de ninguém promover manualmente pelo console. Qualquer
+// outro telefone SEMPRE cai como "client", e essa mesma regra é espelhada no
+// firestore.rules (users/{userId} allow create), então nem burlando o app
+// alguém consegue se auto-promover usando outro número.
 //
 // Exceção só pra dev local: quem não tem acesso ao console do Firebase ainda
 // consegue testar o painel admin. Não é bypass de login — a conta precisa
@@ -67,14 +73,15 @@ export const register = async ({ name, email, phone, password }) => {
     // (mesmo a conta já existindo de verdade). Esperar getIdToken() aqui
     // garante que o token já está pronto antes da chamada.
     await credential.user.getIdToken();
-    // Cria o documento de usuário com papel padrão "client".
-    // Promoção para "admin" deve ser feita manualmente no console do Firebase.
+    // Único telefone que já nasce admin é o do Paulinho de verdade
+    // (ADMIN_PHONE); qualquer outro número é sempre "client".
+    const role = cleanPhone === ADMIN_PHONE ? 'admin' : 'client';
     await withTimeout(
       setDoc(doc(dbLite, 'users', credential.user.uid), {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         phone: cleanPhone,
-        role: 'client',
+        role,
       }),
       25000
     );

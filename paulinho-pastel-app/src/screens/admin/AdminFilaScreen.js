@@ -51,7 +51,13 @@ export default function AdminFilaScreen({ navigation }) {
     if (status === 'received') {
       return paymentMethod === 'on_pickup' ? 'Iniciar Preparo' : 'Confirmar Pix';
     }
-    if (status === 'ready') return 'Pago ✅';
+    if (status === 'ready') {
+      // Pix já foi confirmado como pago lá no início ("Confirmar Pix"), não
+      // faz sentido perguntar de novo aqui — só falta o cliente retirar.
+      // Cartão/dinheiro na retirada é diferente: só é cobrado nesse momento
+      // final, então "Finalizado" cobre pagamento + entrega de uma vez.
+      return paymentMethod === 'on_pickup' ? 'Finalizado ✅' : 'Entregue ✅';
+    }
     return 'Marcar Pronto';
   };
 

@@ -7,10 +7,12 @@ import { db, auth } from '../../services/firebase';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { requestNotificationPermission, notifyOrderReady } from '../../services/notifications';
 import { showAlert } from '../../utils/showAlert';
+import { loadNotifiedOrderIds, markOrderNotified } from '../../utils/notifiedOrders';
 
 export default function ClientOrderStatusScreen({ navigation }) {
   const [myOrders, setMyOrders] = useState([]);
-  const [notifiedSet] = useState(new Set());
+  // Carrega do localStorage (não começa vazio) — ver notifiedOrders.js.
+  const [notifiedSet] = useState(() => loadNotifiedOrderIds());
 
   useEffect(() => {
     requestNotificationPermission();
@@ -44,7 +46,7 @@ export default function ClientOrderStatusScreen({ navigation }) {
         // reforço in-app (vibração e alerta) para quem estiver com a tela aberta.
         ordersData.forEach(o => {
           if (o.status === 'ready' && !notifiedSet.has(o.id)) {
-            notifiedSet.add(o.id);
+            markOrderNotified(o.id, notifiedSet);
             Vibration.vibrate([1000, 500, 1000]);
             notifyOrderReady(o.id);
             showAlert('🔔 PI PI PI!', `O pedido ${o.id.slice(0, 5).toUpperCase()} está pronto e quentinho! Pode retirar.`);
