@@ -46,15 +46,27 @@ service cloud.firestore {
     // telefone só pode criar como "client"; não dá pra burlar isso direto no
     // app, porque quem decide é essa regra no servidor, não o código do
     // cliente.
+    //
+    // Feature "Cliente Não Retirou" (ver docs/feature-bloqueio-no-show.md):
+    // admin também pode LER qualquer documento (precisa pra listar a aba
+    // "Bloqueados", uma query com where('blocked','==',true) que só
+    // funciona se cada doc retornado passar na regra de leitura) e
+    // ATUALIZAR os campos de bloqueio de QUALQUER cliente — mas só esses
+    // campos (hasOnly abaixo), nunca role/name/email/phone de outra conta.
     match /users/{userId} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow create: if isSignedIn() && request.auth.uid == userId &&
         (request.resource.data.role == 'client' ||
          (request.resource.data.role == 'admin' &&
           (request.resource.data.phone == '19987011974' ||
            request.resource.data.phone == '99999999999')));
-      allow update: if isSignedIn() && request.auth.uid == userId &&
-        request.resource.data.role == resource.data.role;
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role) ||
+        (isAdmin() && userId != request.auth.uid &&
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['blocked', 'blocked_order_id', 'blocked_order_snapshot', 'blocked_at']))
+      );
       allow delete: if false;
     }
 

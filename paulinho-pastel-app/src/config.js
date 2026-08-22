@@ -31,3 +31,15 @@ export const ADMIN_MASTER_PHONE = '99999999999';
 // Nenhum outro cai como admin — é essa lista (e a cópia dela em
 // firestore.rules) que decide, não o app.
 export const ADMIN_PHONES = [ADMIN_PHONE, ADMIN_MASTER_PHONE];
+
+// Feature "Cliente Não Retirou" (ver docs/feature-bloqueio-no-show.md).
+//
+// Janela de tolerância: o botão "Cliente Não Retirou" só fica habilitado na
+// fila do admin depois de X minutos contados do pedido ficar pronto (ou da
+// criação, pros raríssimos casos de sumiço antes de chegar em "pronto").
+// Evita o Paulinho marcar um cliente como não-retirou cedo demais, por
+// engano, com o pastel ainda quentinho no balcão. 20 min é um valor
+// assumido pelo Felipe (ponto que o documento de backlog deixava em
+// aberto) — fácil de ajustar aqui se o Paulinho achar curto/longo demais
+// no uso real.
+export const NO_SHOW_TOLERANCE_MINUTES = 20;

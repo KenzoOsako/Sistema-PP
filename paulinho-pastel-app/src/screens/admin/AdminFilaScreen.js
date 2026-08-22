@@ -2,17 +2,40 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { colors, spacing, radii, shadows } from '../../theme';
 import Header from '../../components/Header';
-import { subscribeToOrders, updateOrderStatus } from '../../adapters/OrderAdapter';
+import ConfirmModal from '../../components/ConfirmModal';
+import { subscribeToOrders, updateOrderStatus, markNoShow } from '../../adapters/OrderAdapter';
 import { logout } from '../../adapters/AuthAdapter';
 import { maskPhone } from '../../utils/phoneMask';
+import { NO_SHOW_TOLERANCE_MINUTES } from '../../config';
+import { showAlert } from '../../utils/showAlert';
+
+// Referência de tempo pra janela de tolerância do "Cliente Não Retirou":
+// prefere ready_at (quando o pastel ficou pronto, esperando no balcão) e
+// cai pra created_at nos raros casos de sumiço antes de chegar em "pronto".
+const noShowReferenceDate = (item) => {
+  if (item.ready_at?.toDate) return item.ready_at.toDate();
+  if (item.created_at?.toDate) return item.created_at.toDate();
+  return null;
+};
 
 export default function AdminFilaScreen({ navigation }) {
   const [orders, setOrders] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
+  const [noShowTarget, setNoShowTarget] = useState(null);
+  const [noShowLoading, setNoShowLoading] = useState(false);
+  // Só existe pra forçar um re-render por minuto e o texto/estado do botão
+  // "Cliente Não Retirou" avançar sozinho conforme a janela de tolerância
+  // vai passando, sem precisar o Paulinho puxar a tela pra atualizar.
+  const [, forceTick] = useState(0);
 
   useEffect(() => {
     const unsubscribe = subscribeToOrders(setOrders);
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => forceTick(t => t + 1), 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleLogout = async () => {
@@ -28,6 +51,30 @@ export default function AdminFilaScreen({ navigation }) {
       console.error(e);
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  // Minutos restantes até o botão "Cliente Não Retirou" liberar (ver
+  // NO_SHOW_TOLERANCE_MINUTES em config.js). null = já liberado.
+  const minutesUntilNoShowAllowed = (item) => {
+    const ref = noShowReferenceDate(item);
+    if (!ref) return null;
+    const elapsedMin = (Date.now() - ref.getTime()) / 60000;
+    const remaining = Math.ceil(NO_SHOW_TOLERANCE_MINUTES - elapsedMin);
+    return remaining > 0 ? remaining : null;
+  };
+
+  const confirmNoShow = async () => {
+    if (!noShowTarget) return;
+    setNoShowLoading(true);
+    try {
+      await markNoShow(noShowTarget);
+      setNoShowTarget(null);
+    } catch (e) {
+      console.error(e);
+      showAlert('Erro', e.message || 'Não deu pra marcar esse pedido agora. Tenta de novo.');
+    } finally {
+      setNoShowLoading(false);
     }
   };
 
@@ -74,7 +121,11 @@ export default function AdminFilaScreen({ navigation }) {
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const renderItem = ({ item }) => (
+  const renderItem = ({ item }) => {
+    const remainingMin = minutesUntilNoShowAllowed(item);
+    const noShowReady = remainingMin === null;
+
+    return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text style={styles.orderId}>Pedido {item.id.slice(0, 5).toUpperCase()}</Text>
@@ -115,8 +166,19 @@ export default function AdminFilaScreen({ navigation }) {
           </Text>
         </TouchableOpacity>
       </View>
+
+      <TouchableOpacity
+        style={[styles.noShowButton, !noShowReady && styles.noShowButtonDisabled]}
+        onPress={() => setNoShowTarget(item)}
+        disabled={!noShowReady}
+      >
+        <Text style={[styles.noShowButtonText, !noShowReady && styles.noShowButtonTextDisabled]}>
+          {noShowReady ? 'Cliente Não Retirou' : `Cliente Não Retirou (libera em ${remainingMin}min)`}
+        </Text>
+      </TouchableOpacity>
     </View>
-  );
+    );
+  };
 
   // "completed" = já foi marcado como pago/retirado (botão "Pago ✅") — some
   // da fila pra não acumular pedido antigo empurrando os novos pra baixo e
@@ -140,6 +202,20 @@ export default function AdminFilaScreen({ navigation }) {
           contentContainerStyle={styles.list}
         />
       )}
+
+      <ConfirmModal
+        visible={!!noShowTarget}
+        title="Cliente não retirou?"
+        message={
+          noShowTarget?.payment_method === 'pix'
+            ? 'Confirma que o cliente não veio buscar esse pedido? Já foi pago via Pix, então só sai da fila — ninguém fica devendo nada.'
+            : 'Confirma que o cliente não veio buscar/pagar esse pedido? A conta dele será bloqueada até quitar ou você perdoar a dívida (aba Bloqueados).'
+        }
+        confirmLabel={noShowLoading ? 'Confirmando...' : 'Confirmar'}
+        danger
+        onCancel={() => !noShowLoading && setNoShowTarget(null)}
+        onConfirm={confirmNoShow}
+      />
     </View>
   );
 }
@@ -198,5 +274,16 @@ const styles = StyleSheet.create({
   actionButtonPaid: {
     backgroundColor: colors.success,
   },
-  actionButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 12 }
+  actionButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 12 },
+  noShowButton: {
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.alert,
+    borderRadius: radii.full,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  noShowButtonDisabled: { borderColor: colors.border },
+  noShowButtonText: { color: colors.alert, fontWeight: '700', fontSize: 12 },
+  noShowButtonTextDisabled: { color: colors.textSecondary },
 });

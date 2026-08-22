@@ -13,6 +13,7 @@ export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -27,6 +28,10 @@ export default function RegisterScreen({ navigation }) {
     }
     if (password.length < 6) {
       showAlert('Senha muito curta', 'A senha precisa ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (!acceptedTerms) {
+      showAlert('Falta aceitar os termos', 'Marque a caixinha de termos e condições pra criar a conta.');
       return;
     }
     setLoading(true);
@@ -110,6 +115,22 @@ export default function RegisterScreen({ navigation }) {
             value={password}
             onChangeText={setPassword}
           />
+
+          <TouchableOpacity
+            style={styles.termsRow}
+            onPress={() => setAcceptedTerms(v => !v)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+              {acceptedTerms && <Text style={styles.checkboxMark}>✓</Text>}
+            </View>
+            <Text style={styles.termsText}>
+              Li e aceito os termos: pedidos não retirados e/ou não pagos podem
+              levar ao bloqueio da conta até a quitação, e outras situações não
+              previstas aqui seguem o bom senso do estabelecimento.
+            </Text>
+          </TouchableOpacity>
+
           <View style={styles.buttonContainer}>
             {loading ? (
               <ActivityIndicator size="large" color={colors.primary} />
@@ -150,6 +171,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: radii.sm - 2,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+    marginTop: 1,
+  },
+  checkboxChecked: { backgroundColor: colors.primary, borderColor: colors.primary },
+  checkboxMark: { color: colors.surface, fontSize: 13, fontWeight: '900' },
+  termsText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
   buttonContainer: { marginTop: spacing.xs, minHeight: 52, justifyContent: 'center' },
   backLink: { marginTop: spacing.md, alignItems: 'center' },
   backLinkText: { fontSize: 14, color: colors.textSecondary },

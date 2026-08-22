@@ -128,7 +128,77 @@ export const updateOrderStatus = async (orderId, currentStatus) => {
   else return;
 
   await auth.currentUser?.getIdToken();
+  const extra = {};
+  // Carimba o momento em que o pedido ficou pronto — é a referência usada
+  // pela janela de tolerância do botão "Cliente Não Retirou" (ver
+  // markNoShow abaixo e NO_SHOW_TOLERANCE_MINUTES em config.js). Sem isso
+  // não tem como saber há quanto tempo o pastel está esperando no balcão.
+  if (nextStatus === 'ready') extra.ready_at = serverTimestamp();
   return withTimeout(updateDoc(docLite(dbLite, 'orders', orderId), {
-    status: nextStatus
+    status: nextStatus,
+    ...extra,
+  }));
+};
+
+// "Cliente Não Retirou" (ver docs/feature-bloqueio-no-show.md) — pedido
+// pronto/em fila que o cliente nunca veio buscar/pagar.
+//
+// Pix: o dinheiro já entrou antes de qualquer coisa entrar no forno, então
+// só tira o pedido da fila — sem dívida, sem bloqueio.
+// Cartão/dinheiro na retirada: NÃO foi pago, então o pedido some da fila E
+// a conta do cliente é bloqueada com uma dívida (ver AuthAdapter's
+// subscribeToBlockedUsers e a AdminBlockedScreen que resolve isso depois).
+export const markNoShow = async (order) => {
+  await auth.currentUser?.getIdToken();
+
+  await withTimeout(updateDoc(docLite(dbLite, 'orders', order.id), {
+    status: 'no_show',
+    no_show_at: serverTimestamp(),
+  }));
+
+  if (order.payment_method === 'pix') return; // já pago, ninguém fica devendo nada
+
+  if (!order.client_id || order.client_id === 'anonimo') return; // sem conta pra bloquear
+
+  await withTimeout(updateDoc(docLite(dbLite, 'users', order.client_id), {
+    blocked: true,
+    blocked_order_id: order.id,
+    // "Recibo" mostrado pro cliente na tela de bloqueio (ClientBlockedScreen)
+    // — guardado como snapshot pra não depender de uma segunda leitura em
+    // orders/{id} (que as regras do Firestore nem deixariam o cliente ler
+    // se o pedido não for mais dele por algum motivo futuro).
+    blocked_order_snapshot: {
+      order_id: order.id,
+      items: order.items || [],
+      total: order.total || 0,
+      created_at: order.created_at || null,
+    },
+    blocked_at: serverTimestamp(),
+  }));
+};
+
+// Resolve uma conta bloqueada (aba "Bloqueados" do admin, AdminBlockedScreen):
+// - 'paid': cliente apareceu e quitou depois. Conta entra normalmente nas
+//   vendas do dia da quitação (ver AdminDashboardScreen, que soma pedidos
+//   com debt_resolved === 'paid' pela data de debt_resolved_at, não pela
+//   data original do pedido).
+// - 'forgiven': Paulinho decide relevar a dívida. Não conta como venda, mas
+//   o custo do ingrediente perdido aparece como prejuízo no Financeiro
+//   (mesmo critério de data: dia em que foi perdoado).
+export const resolveNoShow = async (orderId, clientId, resolution) => {
+  if (resolution !== 'paid' && resolution !== 'forgiven') {
+    throw new Error(`Resolução de bloqueio inválida: ${resolution}`);
+  }
+  await auth.currentUser?.getIdToken();
+
+  await withTimeout(updateDoc(docLite(dbLite, 'orders', orderId), {
+    debt_resolved: resolution,
+    debt_resolved_at: serverTimestamp(),
+  }));
+
+  await withTimeout(updateDoc(docLite(dbLite, 'users', clientId), {
+    blocked: false,
+    blocked_order_id: null,
+    blocked_order_snapshot: null,
   }));
 };

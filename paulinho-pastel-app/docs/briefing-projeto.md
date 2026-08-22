@@ -71,10 +71,13 @@ função tem que ficar igual nos dois lugares):
 - **Autocura**: se o cadastro falhar em salvar o documento em
   `users/{uid}` (rede ruim, timeout — aconteceu de verdade numa rede de
   faculdade), a conta existe no Firebase Auth mas fica "presa" como cliente
-  pra sempre. `getUserRole()` agora detecta isso (documento não existe) e
-  recria o documento certo na hora, baseado no telefone da própria conta.
-  Corrigido numa sessão recente — antes disso, login de admin podia "não
-  funcionar" silenciosamente em rede instável.
+  pra sempre. `getAccountStatus()` (a função que o login realmente chama
+  hoje — `getUserRole()` virou um wrapper fino em cima dela) detecta isso
+  (documento não existe) e recria o documento certo na hora, baseado no
+  telefone da própria conta. Corrigido numa sessão recente — antes disso,
+  login de admin podia "não funcionar" silenciosamente em rede instável.
+  `getAccountStatus()` também é quem decide se um CLIENTE está bloqueado
+  (ver seção de bloqueio abaixo) e manda ele pra tela certa no login.
 
 Não existe mais nenhuma conta fixa de admin com credencial conhecida — foi
 apagada de propósito (reset completo do banco pedido pelo Felipe). Ninguém,
@@ -84,20 +87,20 @@ incluindo o Claude, tem/guarda senha de ninguém.
 
 ```
 App.js                          — navegação raiz (stack + tabs do admin)
-src/config.js                   — Pix, ADMIN_PHONES, etc.
+src/config.js                   — Pix, ADMIN_PHONES, NO_SHOW_TOLERANCE_MINUTES, etc.
 src/theme/index.js               — cores, spacing, radii, sombras (design system)
 src/services/firebase.js         — inicialização do Firebase (db normal + dbLite)
 src/adapters/                    — camada que isola Firebase da UI
-  AuthAdapter.js                 — login/cadastro/role
-  OrderAdapter.js                — pedidos (criar, status, assinar em tempo real)
+  AuthAdapter.js                 — login/cadastro/role/status da conta (bloqueio)
+  OrderAdapter.js                — pedidos (criar, status, no-show, tempo real)
   ProductAdapter.js               — cardápio (criar/editar/pausar/excluir produto)
 src/screens/
   auth/          LoginScreen, RegisterScreen
-  client/        ClientMenuScreen, CartScreen, CheckoutScreen, ClientOrderStatusScreen
-  admin/         AdminFilaScreen, AdminMenuScreen, AdminDashboardScreen
-src/components/  Header (selo de data em meia-lua), Button, AppAlertModal
+  client/        ClientMenuScreen, CartScreen, CheckoutScreen, ClientOrderStatusScreen, ClientBlockedScreen
+  admin/         AdminFilaScreen, AdminMenuScreen, AdminDashboardScreen, AdminBlockedScreen
+src/components/  Header (selo de data em meia-lua), Button, AppAlertModal, ConfirmModal
 src/utils/       pixEmv (payload do QR Pix), phoneMask, withTimeout, notifiedOrders, showAlert
-docs/            este briefing + feature-bloqueio-no-show.md (backlog)
+docs/            este briefing + feature-bloqueio-no-show.md (feature implementada)
 ```
 
 ## Decisões técnicas importantes (não reverter sem motivo)
@@ -132,7 +135,8 @@ cardápio do cliente, mas o admin continua vendo/gerenciando).
 
 ## Fluxo de pedido e status
 
-`orders.status`: `received` → `preparing` → `ready` → `completed`.
+`orders.status`: `received` → `preparing` → `ready` → `completed` (ou
+`no_show`, ver seção de bloqueio abaixo).
 
 - Pix: pagamento é confirmado no início (`received` → `preparing` já é
   "Confirmar Pix"). No fim, o botão do admin é **"Entregue ✅"** (não pede
@@ -141,6 +145,8 @@ cardápio do cliente, mas o admin continua vendo/gerenciando).
   o botão final é **"Finalizado ✅"**.
 - Os dois, ao clicar, jogam o pedido pra `completed`, que some da fila do
   admin mas continua contando nas métricas do Financeiro.
+- Ao virar `ready`, o pedido ganha `ready_at` (carimbo usado pela janela de
+  tolerância do botão "Cliente Não Retirou" — ver seção de bloqueio).
 - Notificação de "pronto" pro cliente dispara **uma única vez por pedido**
   (persistida em `localStorage`, ver `src/utils/notifiedOrders.js`) — antes
   disso podia repetir toda vez que o cliente reabria o app.
@@ -152,16 +158,28 @@ cardápio do cliente, mas o admin continua vendo/gerenciando).
 payload EMV do QR é adicionado só na hora de gerar o QR
 (`toDictPhoneKey()` em `src/utils/pixEmv.js`), nunca no que o cliente vê.
 
-## Backlog documentado (não implementado ainda)
+## Bloqueio por não comparecimento ("Cliente Não Retirou")
 
-`docs/feature-bloqueio-no-show.md` — fluxo completo pra quando um cliente
-pede e não aparece pra retirar/pagar: termos de aceite no cadastro, botão
-"Cliente Não Retirou" na fila, bloqueio de conta com dívida (só pra
-cartão/dinheiro — Pix já foi pago), aba nova "Bloqueados" no admin com
-opções "Pago" ou "Perdoar dívida" (essa última precisa contabilizar o
-prejuízo do ingrediente perdido no Financeiro). Documento já tem o desenho
-de dados sugerido e os pontos em aberto pra validar com o Paulinho antes de
-construir.
+Implementado (sessão de 21/08/2026) — detalhe completo em
+`docs/feature-bloqueio-no-show.md`. Resumo rápido: cadastro tem checkbox de
+termos obrigatório; a fila do admin ganhou o botão "Cliente Não Retirou"
+(com janela de tolerância configurável, `NO_SHOW_TOLERANCE_MINUTES` em
+`config.js`); Pix só sai da fila sem dívida, cartão/dinheiro bloqueia a
+conta (`users.blocked`); cliente bloqueado vê uma tela de "recibo" no
+próximo login em vez do cardápio; nova aba "Bloqueados" no admin resolve
+via "Pago ✅" (conta como venda no dia da quitação) ou "Perdoar Dívida"
+(vira prejuízo no Financeiro, nunca venda).
+
+**Importante pro próximo deploy**: além do `firebase deploy --only
+hosting,firestore:rules` de sempre, o `firestore.rules` MUDOU pra essa
+feature (admin agora lê/atualiza campos de bloqueio de qualquer usuário) —
+se esquecer de publicar as regras, a aba Bloqueados fica com permissão
+negada em produção mesmo com o app já atualizado.
+
+Pontos ainda não validados com o Paulinho de verdade (só decisões do
+Felipe pra destravar a implementação, fáceis de revisar): os 20 minutos de
+tolerância, e o modelo "um bloqueio já trava tudo" (sem acumular múltiplas
+dívidas por cliente). Ver detalhes em `docs/feature-bloqueio-no-show.md`.
 
 ## Regras de segurança do Claude que valem pra esse projeto
 
