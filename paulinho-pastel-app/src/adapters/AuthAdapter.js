@@ -1,8 +1,12 @@
-import { auth, dbLite } from '../services/firebase';
+import { auth, db, dbLite } from '../services/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile } from 'firebase/auth';
 // SDK Lite (REST avulso, sem canal de streaming) — ver comentário em firebase.js
 // sobre por que essas leituras/escritas pontuais usam dbLite em vez de db.
-import { doc, getDoc, setDoc } from 'firebase/firestore/lite';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore/lite';
+// `db` normal só entra aqui pra subscribeToBlockedUsers (tempo real na aba
+// "Bloqueados" do admin) — mesmo motivo do subscribeToOrders em
+// OrderAdapter.js: SDK Lite não suporta onSnapshot.
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { withTimeout } from '../utils/withTimeout';
 import { ADMIN_PHONES } from '../config';
 
@@ -82,6 +86,15 @@ export const register = async ({ name, email, phone, password }) => {
         email: email.trim().toLowerCase(),
         phone: cleanPhone,
         role,
+        blocked: false,
+        // Aceite dos termos (checkbox obrigatório em RegisterScreen, checado
+        // ANTES de chamar esse register() — ver docs/feature-bloqueio-no-show.md)
+        // — carimbo de quando essa conta concordou que pedido não
+        // retirado/pago pode levar a bloqueio. Contas antigas (criadas antes
+        // desse campo existir) simplesmente não têm esse campo; não
+        // bloqueamos retroativamente por causa disso, só passa a valer pra
+        // quem se cadastra a partir de agora.
+        terms_accepted_at: serverTimestamp(),
       }),
       25000
     );
@@ -103,9 +116,25 @@ export const logout = () => signOut(auth);
 // o que é o comportamento seguro (nega acesso admin por padrão) — EXCETO
 // quando o telefone da própria conta é um dos ADMIN_PHONES, caso em que a
 // gente recria o documento faltante na hora (ver comentário abaixo).
+//
+// Mantida como função separada (em vez de só usar getAccountStatus().role)
+// porque é mais barata pro caso comum (login) — só olha o campo role — e
+// porque telas antigas que só precisam do papel continuam funcionando sem
+// mudança nenhuma.
 export const getUserRole = async (uid) => {
+  const status = await getAccountStatus(uid);
+  return status.role;
+};
+
+// Retorna o status completo da conta pra decidir pra onde mandar o usuário
+// depois do login: { role, blocked, blockedOrderSnapshot }. `blocked` só
+// importa pra clientes (ver ClientBlockedScreen) — um admin nunca é
+// bloqueado por esse fluxo. `blockedOrderSnapshot` é o "recibo" do pedido
+// que gerou o bloqueio (ver markNoShow em OrderAdapter.js), usado pra
+// montar a tela de aviso sem precisar de uma segunda leitura.
+export const getAccountStatus = async (uid) => {
   if (__DEV__ && isDevAdminPhone(auth.currentUser?.email)) {
-    return 'admin';
+    return { role: 'admin', blocked: false, blockedOrderSnapshot: null };
   }
   try {
     // Mesmo motivo do register(): garante que o token de ID já propagou
@@ -114,7 +143,12 @@ export const getUserRole = async (uid) => {
     await auth.currentUser?.getIdToken();
     const snap = await withTimeout(getDoc(doc(dbLite, 'users', uid)));
     if (snap.exists()) {
-      return snap.data().role === 'admin' ? 'admin' : 'client';
+      const data = snap.data();
+      return {
+        role: data.role === 'admin' ? 'admin' : 'client',
+        blocked: data.blocked === true,
+        blockedOrderSnapshot: data.blocked_order_snapshot || null,
+      };
     }
 
     // Autocura: o documento em users/{uid} não existe, mas a conta de
@@ -134,6 +168,7 @@ export const getUserRole = async (uid) => {
         email: auth.currentUser?.email || '',
         phone: phoneDigits,
         role,
+        blocked: false,
       }));
     } catch (e) {
       // Se essa segunda tentativa também falhar (rede ainda ruim), não tem
@@ -141,9 +176,38 @@ export const getUserRole = async (uid) => {
       // atual, e a autocura tenta de novo sozinha no próximo login.
       console.warn('Autocura do documento de usuário falhou, tenta de novo no próximo login:', e.message);
     }
-    return role;
+    return { role, blocked: false, blockedOrderSnapshot: null };
   } catch (e) {
     console.error('Erro ao buscar papel do usuário:', e);
-    return 'client';
+    return { role: 'client', blocked: false, blockedOrderSnapshot: null };
   }
+};
+
+// Tempo real da aba "Bloqueados" do admin (AdminBlockedScreen). Mesmo
+// padrão de reconexão automática do subscribeToOrders em OrderAdapter.js:
+// se o listener morrer por um erro transitório, ele se reinscreve sozinho
+// em vez de deixar a lista travada em "vazia" pra sempre.
+export const subscribeToBlockedUsers = (onUpdate) => {
+  let currentUnsubscribe = null;
+  let stopped = false;
+
+  const start = () => {
+    const q = query(collection(db, 'users'), where('blocked', '==', true));
+    currentUnsubscribe = onSnapshot(q, (snapshot) => {
+      const usersData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      onUpdate(usersData);
+    }, async (error) => {
+      console.error('Erro ao ouvir contas bloqueadas — reconectando:', error);
+      if (stopped) return;
+      try { await auth.currentUser?.getIdToken(true); } catch (e) { /* ignora, tenta mesmo assim */ }
+      setTimeout(() => { if (!stopped) start(); }, 3000);
+    });
+  };
+
+  start();
+
+  return () => {
+    stopped = true;
+    if (currentUnsubscribe) currentUnsubscribe();
+  };
 };

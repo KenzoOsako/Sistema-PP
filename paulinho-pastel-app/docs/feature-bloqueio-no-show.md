@@ -1,67 +1,115 @@
-# Feature (backlog) — cliente não retirou o pedido
+# Feature — cliente não retirou o pedido
 
-Status: **planejado, não implementado**. Documentado aqui pra não perder a ideia
-antes de conversar com o Paulinho. Nada disso está no app ainda.
+Status: **implementado** (sessão de 21/08/2026). Este documento agora descreve
+o que está no app de verdade, não mais um rascunho de backlog.
 
 ## O problema
 
-Hoje, se um cliente faz um pedido "cartão/dinheiro na retirada" e some — não vai
+Se um cliente faz um pedido "cartão/dinheiro na retirada" e some — não vai
 buscar, não paga — o Paulinho fica sem dois recursos: o dinheiro do pastel e o
 ingrediente que já foi gasto fazendo ele. Pedido Pix não tem esse risco (já foi
 pago antes de entrar no forno), mas mesmo assim precisa sumir da fila igual.
 
-## Fluxo desejado
+## Decisões tomadas (as 3 que estavam em aberto)
 
-**1. Cadastro** ganha um checkbox de "Aceito os termos e condições", cobrindo
-(pelo menos): que pedidos não retirados/pagos podem levar ao bloqueio da conta
-até a quitação, e uma cláusula genérica de "outras situações não previstas
-aqui, mas que seguem o bom senso do estabelecimento" — pra não precisar prever
-100% dos casos por escrito.
+Validadas com o Felipe nesta sessão (ainda não confirmadas com o Paulinho —
+fácil de ajustar se ele achar diferente no uso real):
 
-**2. Na fila do admin**, cada pedido ganha um botão extra pra esse cenário
-(nome sugerido: **"Cliente Não Retirou"** — evita a palavra "bloquear" no
-botão em si, já que o bloqueio é consequência, não a ação direta). Clicar
-pede confirmação (modal: "Confirma que o cliente não veio buscar/pagar esse
-pedido?").
+1. **Nome do botão**: "Cliente Não Retirou" (mantida a sugestão original).
+2. **Acúmulo de bloqueio**: um bloqueio já trava a conta inteira — não dá pra
+   acumular duas dívidas ao mesmo tempo. Se surgir um segundo no-show antes do
+   primeiro ser resolvido, o `markNoShow` simplesmente sobrescreve o bloqueio
+   ativo (mesmo padrão simples, sem histórico de múltiplas dívidas).
+3. **Janela de tolerância**: existe, e é configurável em
+   `src/config.js` → `NO_SHOW_TOLERANCE_MINUTES` (valor assumido: **20
+   minutos**). O botão "Cliente Não Retirou" fica desabilitado (com contagem
+   regressiva visível) até esse tempo passar desde que o pedido ficou pronto
+   (`ready_at`) — ou desde a criação (`created_at`), pro raro caso de sumiço
+   antes de chegar em "pronto".
 
-Depois de confirmado:
-- **Se o pedido era Pix** (já pago): só sai da fila, sem bloquear ninguém —
-  não há dívida, o Paulinho já recebeu.
-- **Se era cartão/dinheiro na retirada** (não pago): o pedido some da fila E a
-  conta do cliente é bloqueada, com uma dívida registrada igual ao valor do
-  pedido.
+## Fluxo implementado
 
-**3. Cliente bloqueado**: da próxima vez que ele logar, em vez do cardápio
-normal, vê uma tela de aviso mostrando o "recibo" daquele pedido (data, itens,
-valor) e uma mensagem tipo "Você fez esse pedido e não retirou/pagou. Regularize
-pra voltar a usar o app." Sem acesso ao resto do app enquanto bloqueado.
+**1. Cadastro** (`RegisterScreen.js`) tem um checkbox obrigatório de "Aceito
+os termos e condições" — texto inline cobrindo bloqueio por não
+retirado/pago + cláusula de bom senso. `AuthAdapter.register()` grava
+`terms_accepted_at` (timestamp do servidor) no documento do usuário. Contas
+antigas não têm esse campo e não são afetadas retroativamente.
 
-**4. Nova aba no admin: "Bloqueados"**, listando cada conta bloqueada com o
-pedido que gerou o bloqueio. Pra cada uma, duas ações:
-- **Pago** → cliente apareceu e acertou depois. Desbloqueia a conta, dívida
-  quitada, e o valor entra normalmente nas vendas do dia da quitação.
-- **Perdoar dívida** → Paulinho decide relevar (ex.: cliente teve uma emergência
-  de verdade). Desbloqueia a conta, mas **sem** contar como venda — e o custo
-  do ingrediente daquele pedido (que já foi gasto e jogado fora) precisa
-  aparecer como prejuízo no Financeiro, não só desaparecer da conta.
+**2. Na fila do admin** (`AdminFilaScreen.js`), cada pedido ativo tem o botão
+"Cliente Não Retirou", desabilitado durante a janela de tolerância. Clicar
+abre um `ConfirmModal` (componente novo, reutilizável — `Cancelar`/
+`Confirmar`, com texto diferente pra Pix vs. cartão/dinheiro).
 
-## O que isso implica no banco/código (rascunho, ainda não desenhado em detalhe)
+Ao confirmar, `OrderAdapter.markNoShow(order)`:
+- Sempre marca o pedido como `status: 'no_show'`.
+- **Pix**: só isso — sem dívida, sem bloqueio (já foi pago).
+- **Cartão/dinheiro na retirada**: também bloqueia `users/{client_id}`
+  (`blocked: true` + `blocked_order_id` + `blocked_order_snapshot` — o
+  "recibo" — + `blocked_at`).
 
-- `orders`: precisa de um jeito de marcar "não retirado" (ex.: `status:
-  'no_show'`) e, quando gera dívida, guardar o valor e o motivo.
-- `users`: precisa de `blocked: boolean`, mais os dados do pedido que causou o
-  bloqueio (pra mostrar o "recibo" na tela de aviso), e `terms_accepted_at`
-  (timestamp de quando aceitou os termos no cadastro).
-- Login/navegação: depois de autenticar, checar `blocked` antes de decidir pra
-  onde mandar o cliente (cardápio normal vs. tela de bloqueio).
-- Financeiro: nova métrica de "prejuízo por não comparecimento" (dívidas
-  perdoadas), separada das vendas normais, pra manter a margem realista.
-- Novo screen `AdminBlockedScreen.js` + nova aba no `AdminTabs` (`App.js`).
+**3. Cliente bloqueado**: no próximo login, `LoginScreen` chama
+`AuthAdapter.getAccountStatus(uid)` (substituiu o antigo `getUserRole` como
+função principal — `getUserRole` virou um wrapper fino em cima dela pra não
+quebrar quem só precisa do papel) e, se `blocked === true`, manda o cliente
+pra `ClientBlockedScreen` em vez do cardápio. Essa tela mostra o "recibo"
+(itens, data, valor) e não tem acesso a mais nada do app — só um botão
+"Sair".
 
-## Em aberto (decidir com o Paulinho antes de construir)
+**4. Aba "Bloqueados" no admin** (`AdminBlockedScreen.js`, novo ícone 🔒 no
+`AdminTabs`), com listener em tempo real (`AuthAdapter.subscribeToBlockedUsers`,
+query `users` com `where('blocked','==',true)`). Cada conta bloqueada tem duas
+ações (ambas com `ConfirmModal` antes de disparar):
+- **Pago ✅** → `OrderAdapter.resolveNoShow(orderId, clientId, 'paid')`.
+  Desbloqueia a conta; o valor entra nas vendas do **dia da quitação**
+  (não do dia original do pedido).
+- **Perdoar Dívida** → `resolveNoShow(orderId, clientId, 'forgiven')`.
+  Desbloqueia a conta; nunca conta como venda, mas o custo do ingrediente
+  aparece como "Prejuízo (Não Comparecimento)" no Financeiro, no dia em que
+  foi perdoado.
 
-- Nome exato do botão na fila (sugestão acima, mas vale validar com ele).
-- Se um cliente pode acumular mais de um bloqueio/dívida ao mesmo tempo, ou
-  se um já bloqueia tudo até resolver.
-- Prazo — tem uma janela de tolerância antes do Paulinho poder marcar "não
-  retirou", ou fica a critério dele a qualquer momento?
+**5. Financeiro** (`AdminDashboardScreen.js`) foi ajustado pra não vazar
+pedidos não pagos nas vendas do dia:
+- Pedidos `no_show` sem resolução NÃO contam em vendas/lucro/itens vendidos
+  enquanto ficam pendentes.
+- Pedidos resolvidos como `'paid'` entram nas vendas do dia de
+  `debt_resolved_at`, não de `created_at`.
+- Pedidos resolvidos como `'forgiven'` nunca entram em vendas — só somam ao
+  novo card "Prejuízo (Não Comparecimento)" (só aparece quando > 0), com o
+  custo (não o preço) dos itens perdidos.
+- "Pedidos Hoje" continua contando por `created_at`, incluindo no-shows —
+  é uma métrica operacional, não financeira.
+
+## Banco de dados (o que mudou de verdade)
+
+- `orders`: novos campos `ready_at` (carimbado por `updateOrderStatus` ao
+  virar `'ready'`), `no_show_at`, `debt_resolved` (`'paid' | 'forgiven'` ou
+  ausente = pendente), `debt_resolved_at`. Novo status possível: `'no_show'`.
+- `users`: novos campos `blocked` (boolean, `false` no cadastro a partir de
+  agora), `blocked_order_id`, `blocked_order_snapshot` (recibo), `blocked_at`,
+  `terms_accepted_at`.
+- `firestore.rules`: admin agora pode **ler qualquer** documento em `users`
+  (necessário pra query da aba Bloqueados) e **atualizar** só os campos de
+  bloqueio (`blocked`, `blocked_order_id`, `blocked_order_snapshot`,
+  `blocked_at`) de contas que não são a dele — nunca `role`/`name`/`email`/
+  `phone` de outra pessoa. **Esse arquivo precisa ser publicado** (`firebase
+  deploy --only firestore:rules`) além do deploy normal de hosting, senão a
+  aba Bloqueados fica com permissão negada em produção mesmo com o código já
+  no ar.
+
+## Testes
+
+`src/adapters/__tests__/OrderAdapter.test.js` ganhou 4 casos novos cobrindo
+`markNoShow` (Pix não bloqueia, cartão/dinheiro bloqueia) e `resolveNoShow`
+(desbloqueia + rejeita resolução inválida). `npm test` e `npm run build:web`
+rodados localmente e verdes antes de entregar.
+
+## Ainda em aberto (validar com o Paulinho quando possível)
+
+- Confirmar se 20 minutos de tolerância é um tempo bom na prática — é fácil
+  de mudar em `NO_SHOW_TOLERANCE_MINUTES` (`src/config.js`).
+- Confirmar se "um bloqueio já trava tudo" (sem acumular dívidas) é
+  suficiente, ou se algum dia vai precisar de histórico de múltiplos
+  no-shows por cliente.
+- Não existe reforço de aceite de termos pra contas criadas antes dessa
+  mudança — decisão consciente pra não travar ninguém retroativamente, mas
+  vale o Paulinho saber que só cobre cadastros novos.

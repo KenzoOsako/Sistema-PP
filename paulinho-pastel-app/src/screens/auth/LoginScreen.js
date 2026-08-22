@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
 import Button from '../../components/Button';
 import { colors, spacing, radii } from '../../theme';
-import { login, getUserRole } from '../../adapters/AuthAdapter';
+import { login, getAccountStatus } from '../../adapters/AuthAdapter';
 import { maskPhone } from '../../utils/phoneMask';
 import { showAlert } from '../../utils/showAlert';
 
@@ -18,8 +18,17 @@ export default function LoginScreen({ navigation, route }) {
   }, [route?.params?.prefillPhone]);
 
   const navigateByRole = async (uid) => {
-    const role = await getUserRole(uid);
-    navigation.replace(role === 'admin' ? 'AdminFila' : 'ClientMenu');
+    const { role, blocked, blockedOrderSnapshot } = await getAccountStatus(uid);
+    if (role === 'admin') {
+      navigation.replace('AdminFila');
+    } else if (blocked) {
+      // Conta de cliente bloqueada por não retirar/pagar um pedido (ver
+      // docs/feature-bloqueio-no-show.md) — vai pra tela de aviso em vez do
+      // cardápio normal, sem acesso ao resto do app até regularizar.
+      navigation.replace('ClientBlocked', { blockedOrderSnapshot });
+    } else {
+      navigation.replace('ClientMenu');
+    }
   };
 
   const handleLogin = async () => {
