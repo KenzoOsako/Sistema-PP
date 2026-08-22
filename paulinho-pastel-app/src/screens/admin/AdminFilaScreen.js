@@ -3,8 +3,8 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import { colors, spacing, radii, shadows } from '../../theme';
 import Header from '../../components/Header';
 import ConfirmModal from '../../components/ConfirmModal';
+import AdminMenuModal from '../../components/AdminMenuModal';
 import { subscribeToOrders, updateOrderStatus, markNoShow } from '../../adapters/OrderAdapter';
-import { logout } from '../../adapters/AuthAdapter';
 import { maskPhone } from '../../utils/phoneMask';
 import { NO_SHOW_TOLERANCE_MINUTES } from '../../config';
 import { showAlert } from '../../utils/showAlert';
@@ -23,6 +23,7 @@ export default function AdminFilaScreen({ navigation }) {
   const [updatingId, setUpdatingId] = useState(null);
   const [noShowTarget, setNoShowTarget] = useState(null);
   const [noShowLoading, setNoShowLoading] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   // Só existe pra forçar um re-render por minuto e o texto/estado do botão
   // "Cliente Não Retirou" avançar sozinho conforme a janela de tolerância
   // vai passando, sem precisar o Paulinho puxar a tela pra atualizar.
@@ -37,11 +38,6 @@ export default function AdminFilaScreen({ navigation }) {
     const interval = setInterval(() => forceTick(t => t + 1), 30000);
     return () => clearInterval(interval);
   }, []);
-
-  const handleLogout = async () => {
-    await logout();
-    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Login' }] });
-  };
 
   const advanceStatus = async (orderId, currentStatus) => {
     setUpdatingId(orderId);
@@ -121,16 +117,40 @@ export default function AdminFilaScreen({ navigation }) {
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
+  // "Cliente Não Retirou" é uma ação RARA (exceção, não fluxo normal) — por
+  // isso vive num ícone pequeno e discreto no canto, não num botão largo
+  // disputando espaço/atenção com "Iniciar Preparo" (a ação recorrente de
+  // verdade). Continua clicável mesmo durante a janela de tolerância —
+  // sem isso o ícone ficaria "morto" e ninguém saberia por quê; em vez de
+  // desabilitar, avisa quanto falta.
+  const handleNoShowIconPress = (item, remainingMin) => {
+    if (remainingMin !== null) {
+      showAlert(
+        'Ainda não liberado',
+        `Só dá pra marcar "Cliente Não Retirou" depois da janela de tolerância. Libera em ${remainingMin} min.`
+      );
+      return;
+    }
+    setNoShowTarget(item);
+  };
+
   const renderItem = ({ item }) => {
     const remainingMin = minutesUntilNoShowAllowed(item);
-    const noShowReady = remainingMin === null;
 
     return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text style={styles.orderId}>Pedido {item.id.slice(0, 5).toUpperCase()}</Text>
-        <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.badgeText} numberOfLines={1}>{getStatusText(item.status, item.payment_method)}</Text>
+        <View style={styles.cardHeaderRight}>
+          <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
+            <Text style={styles.badgeText} numberOfLines={1}>{getStatusText(item.status, item.payment_method)}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.noShowIconButton}
+            onPress={() => handleNoShowIconPress(item, remainingMin)}
+          >
+            <Text style={styles.noShowIconText}>🚫</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -166,16 +186,6 @@ export default function AdminFilaScreen({ navigation }) {
           </Text>
         </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        style={[styles.noShowButton, !noShowReady && styles.noShowButtonDisabled]}
-        onPress={() => setNoShowTarget(item)}
-        disabled={!noShowReady}
-      >
-        <Text style={[styles.noShowButtonText, !noShowReady && styles.noShowButtonTextDisabled]}>
-          {noShowReady ? 'Cliente Não Retirou' : `Cliente Não Retirou (libera em ${remainingMin}min)`}
-        </Text>
-      </TouchableOpacity>
     </View>
     );
   };
@@ -187,7 +197,17 @@ export default function AdminFilaScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <Header title="Fila do Paulinho 🧑‍🍳" subtitle={`${activeOrders.length} pedidos na fila`} logo onLogout={handleLogout} />
+      <Header
+        title="Fila do Paulinho 🧑‍🍳"
+        subtitle={`${activeOrders.length} pedidos na fila`}
+        logo
+        onMenu={() => setMenuVisible(true)}
+      />
+      <AdminMenuModal
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        navigation={navigation}
+      />
 
       {activeOrders.length === 0 ? (
         <View style={styles.emptyState}>
@@ -242,7 +262,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   orderId: { fontSize: 16, fontWeight: '900', color: colors.text },
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, maxWidth: '60%' },
+  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, maxWidth: '55%' },
   badgeText: { color: colors.surface, fontSize: 12, fontWeight: 'bold' },
   clientPhone: { fontSize: 14, color: colors.textSecondary, marginBottom: spacing.sm },
   paymentRow: { marginBottom: spacing.xs },
@@ -275,15 +296,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.success,
   },
   actionButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 12 },
-  noShowButton: {
-    marginTop: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.alert,
+  // Ícone pequeno e discreto do "Cliente Não Retirou" — de propósito NÃO
+  // usa a cor de alerta por padrão (só fica vermelho quando pressionado/
+  // depois de liberado seria exagero pra uma ação rara); cinza neutro,
+  // igual aos ícones de ação do Cardápio do admin, pra não competir
+  // visualmente com o botão principal.
+  noShowIconButton: {
+    width: 28,
+    height: 28,
     borderRadius: radii.full,
-    paddingVertical: 8,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  noShowButtonDisabled: { borderColor: colors.border },
-  noShowButtonText: { color: colors.alert, fontWeight: '700', fontSize: 12 },
-  noShowButtonTextDisabled: { color: colors.textSecondary },
+  noShowIconText: { fontSize: 13 },
 });

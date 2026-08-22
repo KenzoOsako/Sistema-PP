@@ -14,7 +14,9 @@ PWA (funciona também instalado na tela de início do celular).
 ## Stack e onde tudo mora
 
 - **App**: React Native + Expo SDK 57, `react-native-web` (build pra web),
-  React Navigation (stack + bottom-tabs).
+  React Navigation (stack). Desde a Fase 3, a área admin não usa mais
+  `bottom-tabs` — só a Fila é fixa, o resto (Cardápio/Financeiro/Bloqueados)
+  são telas de stack abertas por um menu ☰.
 - **Backend**: Firebase — Auth (login por telefone, disfarçado de e-mail
   `TELEFONE@paulinhopastel.com`), Firestore (banco), Hosting (PWA).
   Projeto Firebase: **`paulinho-pastel-dev`**.
@@ -86,7 +88,7 @@ incluindo o Claude, tem/guarda senha de ninguém.
 ## Estrutura do código
 
 ```
-App.js                          — navegação raiz (stack + tabs do admin)
+App.js                          — navegação raiz (stack; admin = Fila fixa + telas atrás do ☰)
 src/config.js                   — Pix, ADMIN_PHONES, NO_SHOW_TOLERANCE_MINUTES, etc.
 src/theme/index.js               — cores, spacing, radii, sombras (design system)
 src/services/firebase.js         — inicialização do Firebase (db normal + dbLite)
@@ -94,13 +96,17 @@ src/adapters/                    — camada que isola Firebase da UI
   AuthAdapter.js                 — login/cadastro/role/status da conta (bloqueio)
   OrderAdapter.js                — pedidos (criar, status, no-show, tempo real)
   ProductAdapter.js               — cardápio (criar/editar/pausar/excluir produto)
+  StoreStatusAdapter.js           — loja aberta/fechada (Fase 3)
 src/screens/
   auth/          LoginScreen, RegisterScreen
   client/        ClientMenuScreen, CartScreen, CheckoutScreen, ClientOrderStatusScreen, ClientBlockedScreen
   admin/         AdminFilaScreen, AdminMenuScreen, AdminDashboardScreen, AdminBlockedScreen
-src/components/  Header (selo de data em meia-lua), Button, AppAlertModal, ConfirmModal
-src/utils/       pixEmv (payload do QR Pix), phoneMask, withTimeout, notifiedOrders, showAlert
-docs/            este briefing + feature-bloqueio-no-show.md (feature implementada)
+src/components/  Header (chip de data, Fase 3), Button, AppAlertModal, ConfirmModal, AdminMenuModal (Fase 3)
+src/utils/       pixEmv (payload do QR Pix), phoneMask, withTimeout, notifiedOrders, showAlert, deviceBlockMarker
+docs/            este briefing + feature-bloqueio-no-show.md +
+                 feature-antifraude-email.md + feature-fase2-botoes-cardapio-admin.md +
+                 feature-fase3-header-menu-loja.md
+                 (features implementadas)
 ```
 
 ## Decisões técnicas importantes (não reverter sem motivo)
@@ -181,6 +187,74 @@ Felipe pra destravar a implementação, fáceis de revisar): os 20 minutos de
 tolerância, e o modelo "um bloqueio já trava tudo" (sem acumular múltiplas
 dívidas por cliente). Ver detalhes em `docs/feature-bloqueio-no-show.md`.
 
+## Antifraude por email (Fase 1 do batch de 22/08/2026)
+
+Implementado (sessão de 22/08/2026) — detalhe completo em
+`docs/feature-antifraude-email.md`. Resumo rápido: pra o bloqueio acima ter
+efeito de verdade (sem burlar criando conta nova na hora), cadastros novos
+passam a usar o **email de verdade** como email da conta no Firebase Auth
+(era o disfarçado `telefone@paulinhopastel.com` antes) — isso permite
+`sendEmailVerification()` de graça. Login continua só com telefone: o app
+resolve telefone→email por trás via a nova coleção pública
+`phone_directory/{telefone}`. Pedido só pode ser feito com o email
+confirmado (gate no client E no `firestore.rules`). Também tem um
+soft-block bem simples por `localStorage`: aparelho que já mostrou a tela
+de bloqueado avisa (não impede) na tela de cadastro. **Contas antigas
+(email disfarçado) não são afetadas** — o Felipe confirmou que vai apagar
+todas as contas de teste atuais antes do lançamento, então não precisavam
+de migração.
+
+**Importante pro próximo deploy**: `firestore.rules` mudou de novo (nova
+coleção `phone_directory` + gate de `email_verified` em `orders`) — publicar
+junto com o resto.
+
+## Fase 2 — botões de risco + abas no Cardápio do admin
+
+Implementado e **testado ao vivo, confirmado funcionando** (sessão de
+22/08/2026, com o Felipe autorizando senha só pra essa sessão) — detalhe
+completo em `docs/feature-fase2-botoes-cardapio-admin.md`. Resumo rápido:
+"Cliente Não Retirou" na Fila do admin virou um ícone pequeno (🚫) no canto
+do card em vez de um botão largo (menos risco de clique errado com
+"Iniciar Preparo"). O Cardápio do admin ganhou abas Salgados/Doces com a
+mesma navegação por clique do cardápio do cliente (mesmas funções de
+rolagem, copiadas de propósito — ver comentário no código). Produto ganhou
+campo `category` no formulário do admin.
+
+**Bug real achado e corrigido no teste ao vivo**: a lista de produtos só
+desenhava os primeiros ~10 itens (`initialNumToRender` padrão da
+`VirtualizedList`) e isso não se resolvia sozinho parado — só com uma
+rolagem manual. Corrigido com `initialNumToRender={50}` nos dois cardápios
+(admin e cliente). Depois da correção, testado com clique real do mouse
+nos dois sentidos (Doces → Salgados) e confirmado por captura de tela.
+
+## Fase 3 — Header enxuto, menu ☰ no admin e loja aberta/fechada
+
+Implementado (sessão de 22/08/2026), **ainda não testado ao vivo nem
+validado com o Paulinho** — detalhe completo em
+`docs/feature-fase3-header-menu-loja.md`. Resumo rápido: Header virou uma
+linha só (o respiro do topo usa a safe-area real do aparelho em vez de uma
+faixa fixa de 44px que sobrava inteira no PWA/web) — isso muda o visual que
+o Paulinho já tinha aprovado (a meia-lua virou um chip simples), então
+manda um print pra ele antes de considerar essa tela definitiva. A área
+admin deixou de ser um Tab.Navigator com 4 abas: só a Fila é fixa, e
+Cardápio/Financeiro/Bloqueados abrem por um novo menu ☰ no header da Fila
+(`AdminMenuModal`), que também é onde o "Sair" foi morar. E tem um
+interruptor novo de **loja aberta/fechada** nesse mesmo menu: fechada, o
+cliente ainda vê o cardápio (banner avisando), mas o botão final do
+Checkout ("Já paguei, enviar pedido!") fica desabilitado — e a regra do
+Firestore (`isStoreOpen()`, só no create de `orders`) garante isso de
+verdade, não só na tela.
+
+**Importante pro próximo deploy**: `firestore.rules` mudou de novo (nova
+coleção `store_status` + `isStoreOpen()` no create de `orders`) — publicar
+junto com o resto, senão a loja "fechada" no app não bloqueia pedido
+nenhum de verdade.
+
+**Pendente antes de considerar essa fase fechada**: rodar `npm test` e
+`npm run build:web` de verdade (essa sessão não teve como — ver a seção
+"Onde as coisas ficam" logo abaixo) e testar ao vivo no navegador, do jeito
+que a Fase 2 foi validada.
+
 ## Regras de segurança do Claude que valem pra esse projeto
 
 Coisas que eu (Claude) nunca faço nesse projeto, mesmo autorizado: digitar
@@ -194,9 +268,24 @@ vai continuar valendo em conversas futuras.
 
 Ambiente de trabalho: sessão cloud, arquivos ficam espelhados em
 `/mnt/user-data/uploads/Sistema-PP/paulinho-pastel-app/` durante a sessão.
-Depois de editar, sempre: `npm test` + `npm run build:web` pra validar,
-`SendUserFile` pra entregar os arquivos, e
+Depois de editar: `SendUserFile` pra entregar os arquivos, e
 `mcp__remote-devices__device_commit_files` pra gravar direto em
 `C:\Projetos\Sistema-PP\...` no PC do Felipe (só funciona com o app da
 Claude aberto lá — se a conexão cair, os arquivos ficam entregues na
 conversa mesmo assim, só não vão sozinhos pra pasta).
+
+**Descoberta da sessão de 22/08/2026 (Fase 3)**: `npm test`/`npm run
+build:web` **não** rodam bem de dentro desta sessão via
+`mcp__remote-devices__device_bash` — esse comando executa num VM Linux à
+parte (não é o Windows do Felipe de verdade), acessando a pasta montada
+pela rede. Ler/percorrer o `node_modules` inteiro por essa montagem é lento
+o bastante (uma listagem rasa de ~550 pastas já levou quase 3s) pra estourar
+o timeout de 45s do `device_bash` antes até do Jest terminar de subir —
+tentado repetidas vezes nesta sessão, sempre estourando o tempo, inclusive
+rodando em background (que também não sobrevive entre chamadas da
+ferramenta, cada uma roda num sandbox que morre no fim). **Conclusão**:
+depois de editar por aqui e gravar os arquivos na pasta do Felipe, quem
+precisa rodar `npm test` e `npm run build:web` de verdade é o Felipe,
+direto no PowerShell dele (rápido, porque lá o `node_modules` é local de
+verdade) — os comandos exatos estão na seção "Como buildar e publicar" no
+topo deste documento.

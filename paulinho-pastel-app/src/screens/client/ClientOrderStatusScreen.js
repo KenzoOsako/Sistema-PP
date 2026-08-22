@@ -84,11 +84,20 @@ export default function ClientOrderStatusScreen({ navigation }) {
     navigation.navigate('Cart', { cart: repeatedCart, cartTotal: repeatedTotal });
   };
 
-  const getStatusText = (status) => {
+  const getStatusText = (status, paymentMethod) => {
     if (status === 'received') return 'Pedido Recebido (Aguardando Confirmação)';
     if (status === 'preparing') return 'No Fogo 🔥 (Fritando)';
     if (status === 'ready') return 'Pronto para Retirar ✅';
     if (status === 'completed') return 'Retirado ✅';
+    // 'no_show' = marcado como "Cliente Não Retirou" (ver
+    // docs/feature-bloqueio-no-show.md). Pix não gera bloqueio, então o
+    // texto é neutro; cartão/dinheiro é quem de fato bloqueia a conta —
+    // mas se o cliente está vendo esse pedido aqui, ou já regularizou (e a
+    // tela normal de bloqueio, ClientBlockedScreen, não está mais no
+    // caminho dele) ou o pedido era Pix.
+    if (status === 'no_show') {
+      return paymentMethod === 'pix' ? 'Não Retirado' : 'Não Retirado — Conta Regularizada';
+    }
     return 'Desconhecido';
   };
 
@@ -106,7 +115,7 @@ export default function ClientOrderStatusScreen({ navigation }) {
       </View>
 
       <View style={styles.statusBox}>
-        <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+        <Text style={styles.statusText}>{getStatusText(item.status, item.payment_method)}</Text>
       </View>
     </View>
   );

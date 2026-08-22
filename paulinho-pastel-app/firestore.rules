@@ -32,6 +32,17 @@ function isAdmin() {
     get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
 }
 
+// Loja aberta/fechada (Fase 3, ver src/adapters/StoreStatusAdapter.js).
+// Documento único store_status/main — se ainda não existe (banco novo,
+// ninguém nunca mexeu no interruptor), o padrão é "aberta", pra essa
+// feature nunca travar pedido sozinha sem o Paulinho ter fechado de
+// propósito. Mesma regra de default replicada no adapter (leitura) e aqui
+// (enforcement de verdade — o client-side dá só pra aviso bonito).
+function isStoreOpen() {
+  return !exists(/databases/(default)/documents/store_status/main) ||
+    get(/databases/(default)/documents/store_status/main).data.open != false;
+}
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -80,12 +91,51 @@ service cloud.firestore {
     // total/preço diretamente pelo client (isso é recalculado no backend/app
     // via OrderAdapter antes de chegar aqui). Cliente só lê os próprios
     // pedidos; admin lê e atualiza status de todos.
+    //
+    // Antifraude (ver docs/feature-antifraude-email.md): contas NOVAS (email
+    // de verdade, não mais o disfarçado telefone@paulinhopastel.com) só
+    // podem criar pedido com o email confirmado (request.auth.token.
+    // email_verified — claim padrão do próprio Firebase Auth, atualizado
+    // depois de um getIdToken(true) no cliente). Contas ANTIGAS (ainda no
+    // email disfarçado) ficam de fora dessa exigência de propósito — ver o
+    // mesmo comentário em AuthAdapter.js/OrderAdapter.js.
     match /orders/{orderId} {
-      allow create: if isSignedIn() && request.resource.data.client_id == request.auth.uid;
+      // isStoreOpen() só entra no CREATE — loja fechada impede pedido NOVO,
+      // mas nunca trava o admin de continuar atualizando status de pedidos
+      // já feitos antes de fechar (isso passa pelo allow update, que só
+      // exige isAdmin(), sem essa checagem).
+      allow create: if isSignedIn() && request.resource.data.client_id == request.auth.uid &&
+        (request.auth.token.email.matches('.*@paulinhopastel[.]com$') ||
+         request.auth.token.email_verified == true) &&
+        isStoreOpen();
       allow read: if isSignedIn() &&
         (resource.data.client_id == request.auth.uid || isAdmin());
       allow update: if isAdmin();
       allow delete: if false;
+    }
+
+    // Tradução pública telefone->email (ver comentário grande em
+    // AuthAdapter.js). Só existe pra permitir login digitando telefone
+    // mesmo com o Auth agora usando o email de verdade como identidade —
+    // não guarda mais nada além disso. Leitura é pública de propósito (é
+    // consultada ANTES do login, sem sessão). Criação só pelo próprio dono
+    // (uid tem que bater com quem está criando), e o documento é imutável
+    // depois de criado (sem isso, alguém poderia "roubar" o telefone de
+    // login de outra conta reescrevendo o documento).
+    match /phone_directory/{phone} {
+      allow read: if true;
+      allow create: if isSignedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['uid', 'email']);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Loja aberta/fechada (Fase 3): qualquer pessoa logada (cliente ou
+    // admin) precisa ler pra saber se pode pedir; só admin liga/desliga.
+    match /store_status/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }

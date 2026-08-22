@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { colors, spacing, radii, shadows } from '../../theme';
 import Button from '../../components/Button';
 import Header from '../../components/Header';
 import { createOrder } from '../../adapters/OrderAdapter';
+import { subscribeToStoreStatus } from '../../adapters/StoreStatusAdapter';
 import { generatePixPayload, toDictPhoneKey } from '../../utils/pixEmv';
 import { maskPhone } from '../../utils/phoneMask';
 import { PIX_KEY, PIX_MERCHANT_NAME, PIX_MERCHANT_CITY } from '../../config';
@@ -13,6 +14,15 @@ import { showAlert } from '../../utils/showAlert';
 export default function CheckoutScreen({ route, navigation }) {
   const { cartTotal, cart } = route.params;
   const [loading, setLoading] = useState(false);
+  // Loja aberta/fechada (Fase 3): checagem ao vivo aqui também, além do
+  // aviso já mostrado lá no Cardápio — cobre o caso raro do Paulinho
+  // fechar a loja bem no meio do checkout, com o cliente já nessa tela.
+  const [storeOpen, setStoreOpen] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToStoreStatus(setStoreOpen);
+    return () => unsubscribe();
+  }, []);
 
   // Chave crua (só dígitos, sem +55) — é o que copiamos pro clipboard, já
   // que é assim que a maioria dos apps de banco espera colar uma chave de
@@ -46,7 +56,13 @@ export default function CheckoutScreen({ route, navigation }) {
         routes: [{ name: 'ClientMenu' }, { name: 'ClientOrders' }],
       });
     } catch (error) {
-      showAlert('Erro ao enviar pedido', error.message);
+      if (error.code === 'email-not-verified') {
+        showAlert('Confirme seu email', error.message);
+      } else if (error.code === 'store-closed') {
+        showAlert('Loja fechada', error.message);
+      } else {
+        showAlert('Erro ao enviar pedido', error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -81,6 +97,14 @@ export default function CheckoutScreen({ route, navigation }) {
             Transfira o valor exato. O Paulinho vai confirmar o recebimento na barraca para liberar a produção.
           </Text>
         </View>
+
+        {!storeOpen && (
+          <View style={styles.closedBox}>
+            <Text style={styles.closedText}>
+              🔴 O Paulinho fechou a loja agora — não dá pra enviar esse pedido até reabrir.
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.footer}>
@@ -88,8 +112,9 @@ export default function CheckoutScreen({ route, navigation }) {
           <ActivityIndicator size="large" color={colors.primary} />
         ) : (
           <Button
-            title="Já paguei, enviar pedido!"
+            title={storeOpen ? 'Já paguei, enviar pedido!' : 'Loja fechada'}
             onPress={handleConfirmOrder}
+            disabled={!storeOpen}
           />
         )}
       </View>
@@ -121,6 +146,15 @@ const styles = StyleSheet.create({
     borderLeftColor: colors.alert,
   },
   warningText: { color: colors.alert, fontSize: 14, lineHeight: 20 },
+  closedBox: {
+    marginTop: spacing.md,
+    backgroundColor: '#FEF2F2',
+    padding: spacing.md,
+    borderRadius: radii.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.alert,
+  },
+  closedText: { color: colors.alert, fontSize: 14, lineHeight: 20, fontWeight: '700' },
   footer: {
     padding: spacing.lg,
     paddingBottom: 40,

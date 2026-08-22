@@ -5,6 +5,7 @@ import { colors, spacing, radii } from '../../theme';
 import { register } from '../../adapters/AuthAdapter';
 import { maskPhone } from '../../utils/phoneMask';
 import { showAlert } from '../../utils/showAlert';
+import { deviceHadBlockedAccount } from '../../utils/deviceBlockMarker';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -16,6 +17,9 @@ export default function RegisterScreen({ navigation }) {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  // Aviso (não bloqueia o cadastro) se esse mesmo aparelho já mostrou a
+  // tela de "Conta Bloqueada" antes — ver src/utils/deviceBlockMarker.js.
+  const [deviceWasBlocked] = useState(() => deviceHadBlockedAccount());
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !phone || !password) {
@@ -44,8 +48,10 @@ export default function RegisterScreen({ navigation }) {
       }, 1400);
     } catch (error) {
       setLoading(false);
-      if (error.code === 'auth/email-already-in-use') {
-        showAlert('Ops', 'Este número já está cadastrado. Volte e faça login!');
+      if (error.code === 'phone-already-registered') {
+        showAlert('Ops', 'Este telefone já está cadastrado. Volte e faça login!');
+      } else if (error.code === 'auth/email-already-in-use') {
+        showAlert('Ops', 'Este email já está cadastrado. Volte e faça login, ou use outro email!');
       } else if (error.message?.includes('Tempo esgotado')) {
         showAlert('Sem conexão', error.message);
       } else {
@@ -61,7 +67,7 @@ export default function RegisterScreen({ navigation }) {
           <Text style={styles.successCheck}>✓</Text>
         </View>
         <Text style={styles.successTitle}>Conta criada com sucesso!</Text>
-        <Text style={styles.successSubtitle}>Redirecionando para o login...</Text>
+        <Text style={styles.successSubtitle}>Confirme seu email (chega em instantes) antes de fazer pedidos. Redirecionando para o login...</Text>
       </View>
     );
   }
@@ -76,6 +82,15 @@ export default function RegisterScreen({ navigation }) {
           <Text style={styles.logoText}>Criar conta</Text>
           <Text style={styles.subtitle}>Leva menos de 1 minuto.</Text>
         </View>
+        {deviceWasBlocked && (
+          <View style={styles.deviceWarningBox}>
+            <Text style={styles.deviceWarningText}>
+              Uma conta bloqueada já foi acessada neste aparelho. Se for a
+              mesma pessoa, resolva a pendência com o Paulinho em vez de
+              criar uma conta nova.
+            </Text>
+          </View>
+        )}
         <View style={styles.form}>
           <Text style={styles.label}>Nome</Text>
           <TextInput
@@ -159,6 +174,15 @@ const styles = StyleSheet.create({
   logoContainer: { alignItems: 'center', marginBottom: spacing.md },
   logoText: { fontSize: 26, fontWeight: '900', color: colors.primary, marginBottom: 2 },
   subtitle: { fontSize: 14, color: colors.textSecondary },
+  deviceWarningBox: {
+    backgroundColor: '#FEF2F2',
+    padding: spacing.sm,
+    borderRadius: radii.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.alert,
+    marginBottom: spacing.md,
+  },
+  deviceWarningText: { color: colors.alert, fontSize: 12, lineHeight: 17 },
   form: { width: '100%' },
   label: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 4, marginLeft: spacing.xs },
   input: {

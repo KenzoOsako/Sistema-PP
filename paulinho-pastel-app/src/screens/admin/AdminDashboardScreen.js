@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { colors, spacing, radii, shadows } from '../../theme';
 import Header from '../../components/Header';
 import { subscribeToOrders } from '../../adapters/OrderAdapter';
-import { logout } from '../../adapters/AuthAdapter';
 
 export default function AdminDashboardScreen({ navigation }) {
   const [orders, setOrders] = useState([]);
@@ -12,11 +11,6 @@ export default function AdminDashboardScreen({ navigation }) {
     const unsubscribe = subscribeToOrders(setOrders);
     return () => unsubscribe();
   }, []);
-
-  const handleLogout = async () => {
-    await logout();
-    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Login' }] });
-  };
 
   // Calculos para o Dashboard
   const isToday = (timestamp) => {
@@ -92,7 +86,7 @@ export default function AdminDashboardScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <Header title="Financeiro Hoje 📊" logo onLogout={handleLogout} />
+      <Header title="Financeiro Hoje 📊" onBack={() => navigation.goBack()} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.heroCard}>

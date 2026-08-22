@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, StyleSheet, SectionList, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { colors, spacing, radii, shadows } from '../../theme';
 import Button from '../../components/Button';
 import Header from '../../components/Header';
 import { subscribeToProducts, createProduct, updateProduct, deleteProduct } from '../../adapters/ProductAdapter';
-import { logout } from '../../adapters/AuthAdapter';
 import { showAlert } from '../../utils/showAlert';
 
 // Cardápio real da barraca do Paulinho (tirado direto da placa física).
@@ -44,7 +43,24 @@ const CARDAPIO_PADRAO = [
   { name: 'Doce de Leite com Banana e Canela', price: 15, cost: 3.9, category: 'Doces' },
 ];
 
-const emptyForm = { name: '', desc: '', price: '', cost: '' };
+// Ordem fixa das categorias na aba e no agrupamento — mesma lista e mesma
+// lógica de fallback do ClientMenuScreen.js (produto sem categoria salva,
+// ex.: cadastrado antes deste campo existir, cai em "Salgados").
+const CATEGORY_ORDER = ['Salgados', 'Doces'];
+
+function groupByCategory(products) {
+  const buckets = {};
+  products.forEach(p => {
+    const cat = p.category === 'Doces' ? 'Doces' : 'Salgados';
+    if (!buckets[cat]) buckets[cat] = [];
+    buckets[cat].push(p);
+  });
+  return CATEGORY_ORDER
+    .filter(cat => buckets[cat]?.length)
+    .map(cat => ({ title: cat, data: buckets[cat] }));
+}
+
+const emptyForm = { name: '', desc: '', price: '', cost: '', category: 'Salgados' };
 
 export default function AdminMenuScreen({ navigation }) {
   const [products, setProducts] = useState([]);
@@ -54,16 +70,21 @@ export default function AdminMenuScreen({ navigation }) {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null); // pausar/excluir em andamento nesse item
   const [seeding, setSeeding] = useState(false);
+  // Navegação por abas Salgados/Doces — mesmo padrão validado e testado no
+  // ClientMenuScreen.js (ver comentário grande de handleTabPress abaixo).
+  // Duplicado de propósito em vez de compartilhado: essa lógica já levou 3
+  // tentativas pra acertar do lado do cliente e tem um teste E2E dedicado
+  // (scripts/e2e-menu-tabs.js) — mexer nela pra "generalizar" arriscava
+  // quebrar o que já está validado. Se um bug aparecer aqui, é bem provável
+  // que seja o mesmo bug lá, então corrija dos dois lados.
+  const [activeCategory, setActiveCategory] = useState(CATEGORY_ORDER[0]);
+  const sectionListRef = React.useRef(null);
+  const suppressViewabilityRef = React.useRef(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToProducts(setProducts);
     return () => unsubscribe();
   }, []);
-
-  const handleLogout = async () => {
-    await logout();
-    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Login' }] });
-  };
 
   const openNewForm = () => {
     setEditingProduct(null);
@@ -78,6 +99,7 @@ export default function AdminMenuScreen({ navigation }) {
       desc: product.desc || '',
       price: String(product.price ?? '').replace('.', ','),
       cost: product.cost ? String(product.cost).replace('.', ',') : '',
+      category: product.category === 'Doces' ? 'Doces' : 'Salgados',
     });
     setFormOpen(true);
   };
@@ -87,6 +109,102 @@ export default function AdminMenuScreen({ navigation }) {
     setEditingProduct(null);
     setForm(emptyForm);
   };
+
+  // Funções de rolagem — cópia intencional das mesmas funções do
+  // ClientMenuScreen.js (ver comentário lá): `container.scrollTo({top,
+  // behavior:'smooth'})` não funciona no ScrollView web deste app, então a
+  // rolagem suave é feita à mão via requestAnimationFrame, mutando
+  // `scrollTop` direto. A "âncora" (primeiro item de cada seção) é medida
+  // em vez do cabeçalho (que é `position: sticky` e corrompe
+  // getBoundingClientRect depois de grudar uma vez).
+  const SECTION_HEADER_HEIGHT = 56;
+
+  const smoothScrollTo = (el, targetTop, duration = 350) => {
+    const startTop = el.scrollTop;
+    const delta = targetTop - startTop;
+    if (Math.abs(delta) < 1) return;
+    suppressViewabilityRef.current = true;
+    const startTime = performance.now();
+    const step = (now) => {
+      const progress = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.scrollTop = startTop + delta * eased;
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        setTimeout(() => { suppressViewabilityRef.current = false; }, 150);
+      }
+    };
+    requestAnimationFrame(step);
+  };
+
+  const getWebScrollContainer = () => {
+    const candidates = document.querySelectorAll('div');
+    for (const el of candidates) {
+      const style = getComputedStyle(el);
+      if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+        return el;
+      }
+    }
+    return document.scrollingElement;
+  };
+
+  // BUG ENCONTRADO E CORRIGIDO (teste ao vivo, sessão 22/08/2026, ver mesmo
+  // comentário/correção no ClientMenuScreen.js): tocar na aba logo que a
+  // tela monta pode acontecer antes da VirtualizedList terminar de
+  // desenhar os itens mais pra baixo — a âncora daquela seção ainda não
+  // existe no DOM, e o clique virava um no-op silencioso. Tenta de novo
+  // algumas vezes com um respiro curto antes de desistir.
+  // Janela de retry ajustada depois de testar ao vivo (ver mesmo comentário
+  // no ClientMenuScreen.js): 20 tentativas de 150ms = até 3s de janela.
+  const scrollToAnchorWithRetry = (category, container, attemptsLeft = 20) => {
+    const anchor = document.getElementById(`admin-menu-section-anchor-${category}`);
+    if (anchor) {
+      const targetTop = anchor.getBoundingClientRect().top
+        - container.getBoundingClientRect().top
+        + container.scrollTop
+        - SECTION_HEADER_HEIGHT;
+      smoothScrollTo(container, Math.max(0, targetTop));
+      return;
+    }
+    if (attemptsLeft <= 0) return;
+    setTimeout(() => scrollToAnchorWithRetry(category, container, attemptsLeft - 1), 150);
+  };
+
+  const handleTabPress = (category, sections) => {
+    setActiveCategory(category);
+
+    if (Platform.OS === 'web') {
+      const container = getWebScrollContainer();
+      if (!container) return;
+
+      if (category === CATEGORY_ORDER[0]) {
+        smoothScrollTo(container, 0);
+        return;
+      }
+
+      scrollToAnchorWithRetry(category, container);
+      return;
+    }
+
+    const sectionIndex = sections.findIndex(s => s.title === category);
+    if (sectionIndex === -1 || !sectionListRef.current) return;
+    sectionListRef.current.scrollToLocation({
+      sectionIndex,
+      itemIndex: 0,
+      viewPosition: 0,
+      animated: true,
+    });
+  };
+
+  const handleViewableItemsChanged = React.useRef(({ viewableItems }) => {
+    if (suppressViewabilityRef.current) return;
+    let lastSection = null;
+    for (const v of viewableItems) {
+      if (v.section) lastSection = v.section;
+    }
+    if (lastSection) setActiveCategory(lastSection.title);
+  }).current;
 
   const handleSaveProduct = async () => {
     if (!form.name || !form.price) {
@@ -100,6 +218,7 @@ export default function AdminMenuScreen({ navigation }) {
         desc: form.desc,
         price: parseFloat(form.price.replace(',', '.')),
         cost: form.cost ? parseFloat(form.cost.replace(',', '.')) : 0,
+        category: form.category === 'Doces' ? 'Doces' : 'Salgados',
       };
       if (editingProduct) {
         await updateProduct(editingProduct.id, payload);
@@ -152,11 +271,25 @@ export default function AdminMenuScreen({ navigation }) {
     }
   };
 
-  const renderItem = ({ item }) => {
+  const sections = groupByCategory(products);
+
+  const renderSectionHeader = ({ section }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{section.title}</Text>
+      <View style={styles.sectionUnderline} />
+    </View>
+  );
+
+  const renderItem = ({ item, index, section }) => {
     const paused = item.active === false;
     const isBusy = busyId === item.id;
     return (
-      <View style={[styles.card, paused && styles.cardPaused]}>
+      <View
+        style={[styles.card, paused && styles.cardPaused]}
+        // Âncora pra rolagem das abas (ver handleTabPress) — só no primeiro
+        // item de cada seção, mesmo padrão do ClientMenuScreen.js.
+        nativeID={index === 0 ? `admin-menu-section-anchor-${section.title}` : undefined}
+      >
         <View style={styles.cardInfo}>
           <View style={styles.cardNameRow}>
             <Text style={[styles.productName, paused && styles.textPaused]}>{item.name}</Text>
@@ -193,8 +326,7 @@ export default function AdminMenuScreen({ navigation }) {
     <View style={styles.container}>
       <Header
         title="Cardápio Ao Vivo"
-        logo
-        onLogout={handleLogout}
+        onBack={() => navigation.goBack()}
         right={
           !formOpen && (
             <TouchableOpacity style={styles.newButton} onPress={openNewForm}>
@@ -226,6 +358,18 @@ export default function AdminMenuScreen({ navigation }) {
               <TextInput style={styles.input} placeholder="3,20" placeholderTextColor={colors.placeholder} keyboardType="numeric" value={form.cost} onChangeText={v => setForm(f => ({ ...f, cost: v }))} />
             </View>
           </View>
+          <Text style={styles.label}>Categoria</Text>
+          <View style={styles.categoryToggle}>
+            {CATEGORY_ORDER.map(cat => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.categoryOption, form.category === cat && styles.categoryOptionActive]}
+                onPress={() => setForm(f => ({ ...f, category: cat }))}
+              >
+                <Text style={[styles.categoryOptionText, form.category === cat && styles.categoryOptionTextActive]}>{cat}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           {saving ? (
             <ActivityIndicator color={colors.primary} />
           ) : (
@@ -248,12 +392,42 @@ export default function AdminMenuScreen({ navigation }) {
           )}
         </View>
       ) : (
-        <FlatList
-          data={products}
-          keyExtractor={item => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.list}
-        />
+        <>
+          <View style={styles.tabBar}>
+            {CATEGORY_ORDER.filter(cat => sections.some(s => s.title === cat)).map(cat => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.tab, activeCategory === cat && styles.tabActive]}
+                onPress={() => handleTabPress(cat, sections)}
+              >
+                <Text style={[styles.tabText, activeCategory === cat && styles.tabTextActive]}>{cat}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <SectionList
+            ref={sectionListRef}
+            sections={sections}
+            keyExtractor={item => item.id}
+            renderItem={renderItem}
+            renderSectionHeader={renderSectionHeader}
+            onViewableItemsChanged={handleViewableItemsChanged}
+            viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+            stickySectionHeadersEnabled
+            contentContainerStyle={styles.list}
+            // CAUSA RAIZ do bug de clique em aba não rolar (achado em teste
+            // ao vivo, sessão 22/08/2026): por padrão a VirtualizedList por
+            // baixo do SectionList só desenha ~10 itens de cara e NÃO
+            // completa sozinha com o tempo (testado: 5s parado sem crescer
+            // nada) — só cresce rolando de verdade. Isso deixava a âncora
+            // de "Doces" fora do DOM até o usuário já ter rolado até lá na
+            // mão, o que nunca acontece bem no fluxo (é justamente o botão
+            // que deveria levar até lá). Cardápio de barraca de pastel é
+            // pequeno (não passa de umas poucas dezenas de itens) — mais
+            // seguro e simples mandar desenhar tudo de uma vez do que
+            // depender de timing de virtualização pra uma lista tão curta.
+            initialNumToRender={50}
+          />
+        </>
       )}
     </View>
   );
@@ -287,6 +461,57 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: spacing.md },
   rowItem: { flex: 1 },
   label: { fontSize: 13, fontWeight: '700', marginBottom: 6, color: colors.textSecondary },
+  categoryToggle: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  categoryOption: {
+    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.full,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  categoryOptionActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  categoryOptionText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  categoryOptionTextActive: { color: colors.surface },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tab: {
+    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.full,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  tabText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  tabTextActive: { color: colors.surface },
+  sectionHeader: {
+    backgroundColor: colors.background,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  sectionUnderline: {
+    width: 28,
+    height: 3,
+    borderRadius: radii.full,
+    backgroundColor: colors.primary,
+    marginTop: 6,
+  },
   input: {
     backgroundColor: colors.background,
     height: 48,

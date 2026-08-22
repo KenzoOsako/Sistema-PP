@@ -1,5 +1,6 @@
 import { createOrder, markNoShow, resolveNoShow } from '../OrderAdapter';
 import { addDoc, getDocs, getDoc, updateDoc } from 'firebase/firestore/lite';
+import { auth } from '../../services/firebase';
 
 // Mock Firebase setup.
 //
@@ -20,6 +21,8 @@ jest.mock('../../services/firebase', () => ({
     currentUser: {
       uid: 'test_uid',
       email: 'test@mail.com',
+      emailVerified: true,
+      reload: jest.fn().mockResolvedValue(undefined),
       getIdToken: jest.fn().mockResolvedValue('fake-token'),
     },
   },
@@ -42,6 +45,26 @@ jest.mock('firebase/firestore/lite', () => ({
   serverTimestamp: jest.fn(() => 'mocked_timestamp'),
   getDocs: jest.fn(),
   getDoc: jest.fn(),
+}));
+
+// Evita chamar o Firebase Auth de verdade no reenvio best-effort de
+// verificação (ver gate antifraude em createOrder) — o mock de
+// auth.currentUser acima não é uma instância real de User, e a função de
+// verdade quebraria tentando ler campos internos dela.
+jest.mock('firebase/auth', () => ({
+  sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+}));
+
+// Fase 3: createOrder agora começa checando getStoreOpen() (loja aberta/
+// fechada). Sem mockar isso, essa checagem cai no MESMO getDoc mockado
+// acima e consome os mockResolvedValueOnce que os testes abaixo preparam
+// pra o snapshot do PERFIL do cliente — os dois acabam funcionando por
+// acidente (o efeito colateral vira `undefined`, tratado como "loja
+// aberta" e como "sem perfil", que já era um caminho coberto), mas é
+// simples e bem mais honesto isolar isso de vez com o próprio mock, em vez
+// de depender dessa coincidência silenciosa continuar valendo pra sempre.
+jest.mock('../StoreStatusAdapter', () => ({
+  getStoreOpen: jest.fn().mockResolvedValue(true),
 }));
 
 describe('OrderAdapter (Zero-Trust Validation)', () => {
@@ -78,6 +101,42 @@ describe('OrderAdapter (Zero-Trust Validation)', () => {
         ])
       })
     );
+  });
+});
+
+// Gate antifraude (ver docs/feature-antifraude-email.md): conta NOVA (email
+// de verdade) só pode pedir com o email confirmado; conta ANTIGA (email
+// disfarçado telefone@paulinhopastel.com) fica de fora do gate.
+describe('OrderAdapter (gate de email verificado)', () => {
+  const originalEmail = auth.currentUser.email;
+  const originalVerified = auth.currentUser.emailVerified;
+
+  beforeEach(() => {
+    addDoc.mockClear();
+  });
+
+  afterEach(() => {
+    auth.currentUser.email = originalEmail;
+    auth.currentUser.emailVerified = originalVerified;
+  });
+
+  it('Bloqueia o pedido se o email (de verdade) ainda não foi confirmado', async () => {
+    auth.currentUser.email = 'cliente@gmail.com';
+    auth.currentUser.emailVerified = false;
+
+    await expect(createOrder([{ id: '1', name: 'Pastel', price: 9, quantity: 1 }]))
+      .rejects.toMatchObject({ code: 'email-not-verified' });
+    expect(addDoc).not.toHaveBeenCalled();
+  });
+
+  it('Deixa passar conta antiga (email disfarçado) mesmo sem emailVerified', async () => {
+    getDocs.mockResolvedValueOnce([{ id: '1', data: () => ({ price: 9.00 }) }]);
+    getDoc.mockResolvedValueOnce({ exists: () => false });
+    auth.currentUser.email = '19999999999@paulinhopastel.com';
+    auth.currentUser.emailVerified = false;
+
+    await createOrder([{ id: '1', name: 'Pastel', price: 9, quantity: 1 }]);
+    expect(addDoc).toHaveBeenCalled();
   });
 });
 

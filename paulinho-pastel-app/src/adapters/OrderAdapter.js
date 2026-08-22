@@ -1,4 +1,5 @@
 import { db, dbLite, auth } from '../services/firebase';
+import { sendEmailVerification } from 'firebase/auth';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 // SDK Lite (REST avulso, sem canal de streaming) pras operações pontuais —
 // ver comentário em firebase.js. onSnapshot continua no db normal acima,
@@ -13,6 +14,7 @@ import {
   getDocs,
 } from 'firebase/firestore/lite';
 import { withTimeout } from '../utils/withTimeout';
+import { getStoreOpen } from './StoreStatusAdapter';
 
 // Hexagonal Port Adapter: Isola o Firestore da UI (SOLID, Kenzo Standard)
 //
@@ -23,6 +25,51 @@ import { withTimeout } from '../utils/withTimeout';
 // onSnapshot (listener contínuo) NÃO entra aqui, pois não é uma Promise única.
 
 export const createOrder = async (cart, paymentMethod = 'pix') => {
+  // Loja fechada (Fase 3, ver src/adapters/StoreStatusAdapter.js): checagem
+  // client-side só pra dar um erro amigável na hora — quem impede de
+  // verdade é isStoreOpen() em firestore.rules (esta aqui dá pra "burlar"
+  // mudando o código do app, a de lá não). Best-effort: se a leitura falhar
+  // por qualquer motivo (rede etc.), segue o pedido normalmente e deixa a
+  // regra do servidor decidir.
+  try {
+    const open = await getStoreOpen();
+    if (!open) {
+      const err = new Error('O Paulinho fechou a loja no momento. Tenta de novo mais tarde!');
+      err.code = 'store-closed';
+      throw err;
+    }
+  } catch (e) {
+    if (e.code === 'store-closed') throw e;
+    // erro de leitura (rede, timeout) — não bloqueia por causa disso
+  }
+
+  // Gate antifraude (ver docs/feature-antifraude-email.md e o comentário
+  // grande em AuthAdapter.register/login): contas NOVAS (email de verdade
+  // como email do Auth) só conseguem pedir depois de confirmar o email.
+  // Contas ANTIGAS (ainda no email disfarçado telefone@paulinhopastel.com)
+  // são ignoradas por esse gate de propósito — são contas de teste que vão
+  // ser apagadas antes do lançamento, não faz sentido travá-las agora.
+  const isLegacyFakeEmail = (auth.currentUser?.email || '').endsWith('@paulinhopastel.com');
+  if (auth.currentUser && !isLegacyFakeEmail) {
+    try { await auth.currentUser.reload(); } catch (e) { /* segue com o que já tem em cache */ }
+    if (!auth.currentUser.emailVerified) {
+      const err = new Error(
+        'Confirme seu email antes de fazer um pedido. A gente reenviou o link agora — dá uma olhada na caixa de entrada (e no spam).'
+      );
+      err.code = 'email-not-verified';
+      // Reenvio best-effort: o usuário não precisa caçar um botão separado
+      // pra pedir de novo, e o próprio Firebase já limita a frequência
+      // (auth/too-many-requests) se isso for chamado repetidas vezes rápido.
+      sendEmailVerification(auth.currentUser).catch(() => {});
+      throw err;
+    }
+    // Garante que o token usado pelas regras do Firestore já reflete
+    // "email_verified: true" — sem isso o claim pode estar desatualizado
+    // (mintado antes da verificação) e o create do pedido cair em
+    // permission-denied mesmo com o email já confirmado.
+    try { await auth.currentUser.getIdToken(true); } catch (e) { /* a regra rejeita se o token ainda tiver velho */ }
+  }
+
   // Garante que o token de ID já propagou antes das chamadas REST do SDK
   // Lite — mesma proteção contra 403 explicada em AuthAdapter.js.
   await auth.currentUser?.getIdToken();

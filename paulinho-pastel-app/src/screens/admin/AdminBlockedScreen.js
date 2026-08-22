@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import { colors, spacing, radii, shadows } from '../../theme';
 import Header from '../../components/Header';
 import ConfirmModal from '../../components/ConfirmModal';
-import { subscribeToBlockedUsers, logout } from '../../adapters/AuthAdapter';
+import { subscribeToBlockedUsers } from '../../adapters/AuthAdapter';
 import { resolveNoShow } from '../../adapters/OrderAdapter';
 import { maskPhone } from '../../utils/phoneMask';
 import { showAlert } from '../../utils/showAlert';
@@ -23,11 +23,6 @@ export default function AdminBlockedScreen({ navigation }) {
     const unsubscribe = subscribeToBlockedUsers(setBlockedUsers);
     return () => unsubscribe();
   }, []);
-
-  const handleLogout = async () => {
-    await logout();
-    navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Login' }] });
-  };
 
   const askResolve = (user, resolution) => setConfirmTarget({ user, resolution });
 
@@ -106,7 +101,11 @@ export default function AdminBlockedScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <Header title="Bloqueados 🔒" subtitle={`${blockedUsers.length} conta(s) bloqueada(s)`} logo onLogout={handleLogout} />
+      <Header
+        title="Bloqueados 🔒"
+        subtitle={`${blockedUsers.length} conta(s) bloqueada(s)`}
+        onBack={() => navigation.goBack()}
+      />
 
       {blockedUsers.length === 0 ? (
         <View style={styles.emptyState}>

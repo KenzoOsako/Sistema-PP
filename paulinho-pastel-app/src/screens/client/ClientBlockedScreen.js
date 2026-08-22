@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { colors, spacing, radii, shadows } from '../../theme';
 import Header from '../../components/Header';
 import { logout } from '../../adapters/AuthAdapter';
+import { markDeviceHadBlockedAccount } from '../../utils/deviceBlockMarker';
 
 // Tela de aviso pra cliente com a conta bloqueada (ver
 // docs/feature-bloqueio-no-show.md). Substitui o cardápio normal — o
@@ -13,6 +14,10 @@ import { logout } from '../../adapters/AuthAdapter';
 // leitura ao Firestore.
 export default function ClientBlockedScreen({ navigation, route }) {
   const snapshot = route?.params?.blockedOrderSnapshot;
+
+  useEffect(() => {
+    markDeviceHadBlockedAccount();
+  }, []);
 
   const handleLogout = async () => {
     await logout();
