@@ -1,0 +1,315 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { colors, spacing, radii, shadows } from '../../theme';
+import Header from '../../components/Header';
+import ConfirmModal from '../../components/ConfirmModal';
+import AdminDrawerMenu from '../../components/AdminDrawerMenu';
+import { subscribeToOrders, updateOrderStatus, markNoShow } from '../../adapters/OrderAdapter';
+import { maskPhone } from '../../utils/phoneMask';
+import { NO_SHOW_TOLERANCE_MINUTES } from '../../config';
+import { showAlert } from '../../utils/showAlert';
+
+// Referência de tempo pra janela de tolerância do "Cliente Não Retirou":
+// prefere ready_at (quando o pastel ficou pronto, esperando no balcão) e
+// cai pra created_at nos raros casos de sumiço antes de chegar em "pronto".
+const noShowReferenceDate = (item) => {
+  if (item.ready_at?.toDate) return item.ready_at.toDate();
+  if (item.created_at?.toDate) return item.created_at.toDate();
+  return null;
+};
+
+export default function AdminFilaScreen({ navigation }) {
+  const [orders, setOrders] = useState([]);
+  const [updatingId, setUpdatingId] = useState(null);
+  const [noShowTarget, setNoShowTarget] = useState(null);
+  const [noShowLoading, setNoShowLoading] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  // Só existe pra forçar um re-render por minuto e o texto/estado do botão
+  // "Cliente Não Retirou" avançar sozinho conforme a janela de tolerância
+  // vai passando, sem precisar o Paulinho puxar a tela pra atualizar.
+  const [, forceTick] = useState(0);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToOrders(setOrders);
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => forceTick(t => t + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const advanceStatus = async (orderId, currentStatus) => {
+    setUpdatingId(orderId);
+    try {
+      await updateOrderStatus(orderId, currentStatus);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Minutos restantes até o botão "Cliente Não Retirou" liberar (ver
+  // NO_SHOW_TOLERANCE_MINUTES em config.js). null = já liberado.
+  const minutesUntilNoShowAllowed = (item) => {
+    const ref = noShowReferenceDate(item);
+    if (!ref) return null;
+    const elapsedMin = (Date.now() - ref.getTime()) / 60000;
+    const remaining = Math.ceil(NO_SHOW_TOLERANCE_MINUTES - elapsedMin);
+    return remaining > 0 ? remaining : null;
+  };
+
+  const confirmNoShow = async () => {
+    if (!noShowTarget) return;
+    setNoShowLoading(true);
+    try {
+      await markNoShow(noShowTarget);
+      setNoShowTarget(null);
+    } catch (e) {
+      console.error(e);
+      showAlert('Erro', e.message || 'Não deu pra marcar esse pedido agora. Tenta de novo.');
+    } finally {
+      setNoShowLoading(false);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    if (status === 'received') return colors.warning;
+    if (status === 'preparing') return colors.primary;
+    if (status === 'ready') return colors.success;
+    return '#CCC';
+  };
+
+  const getStatusText = (status, paymentMethod) => {
+    if (status === 'received') {
+      return paymentMethod === 'on_pickup' ? 'Novo · Retirada' : 'Novo · Pix';
+    }
+    if (status === 'preparing') return 'No Fogo 🔥';
+    if (status === 'ready') return 'Pronto ✅';
+    return status;
+  };
+
+  const getActionLabel = (status, paymentMethod) => {
+    if (status === 'received') {
+      return paymentMethod === 'on_pickup' ? 'Iniciar Preparo' : 'Confirmar Pix';
+    }
+    if (status === 'ready') {
+      // Pix já foi confirmado como pago lá no início ("Confirmar Pix"), não
+      // faz sentido perguntar de novo aqui — só falta o cliente retirar.
+      // Cartão/dinheiro na retirada é diferente: só é cobrado nesse momento
+      // final, então "Finalizado" cobre pagamento + entrega de uma vez.
+      return paymentMethod === 'on_pickup' ? 'Finalizado ✅' : 'Entregue ✅';
+    }
+    return 'Marcar Pronto';
+  };
+
+  const getClientLabel = (item) => {
+    if (item.client_name) return item.client_name;
+    const digits = item.client_email?.split('@')[0];
+    if (!digits) return 'Desconhecido';
+    return /^\d+$/.test(digits) ? maskPhone(digits) : digits;
+  };
+
+  const getOrderTime = (item) => {
+    if (!item.created_at?.toDate) return '';
+    const d = item.created_at.toDate();
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // "Cliente Não Retirou" é uma ação RARA (exceção, não fluxo normal) — por
+  // isso vive num ícone pequeno e discreto no canto, não num botão largo
+  // disputando espaço/atenção com "Iniciar Preparo" (a ação recorrente de
+  // verdade). Continua clicável mesmo durante a janela de tolerância —
+  // sem isso o ícone ficaria "morto" e ninguém saberia por quê; em vez de
+  // desabilitar, avisa quanto falta.
+  const handleNoShowIconPress = (item, remainingMin) => {
+    if (remainingMin !== null) {
+      showAlert(
+        'Ainda não liberado',
+        `Só dá pra marcar "Cliente Não Retirou" depois da janela de tolerância. Libera em ${remainingMin} min.`
+      );
+      return;
+    }
+    setNoShowTarget(item);
+  };
+
+  const renderItem = ({ item }) => {
+    const remainingMin = minutesUntilNoShowAllowed(item);
+
+    return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Text style={styles.orderId}>Pedido {item.id.slice(0, 5).toUpperCase()}</Text>
+        <View style={styles.cardHeaderRight}>
+          <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) }]}>
+            <Text style={styles.badgeText} numberOfLines={1}>{getStatusText(item.status, item.payment_method)}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.noShowIconButton}
+            onPress={() => handleNoShowIconPress(item, remainingMin)}
+          >
+            <Text style={styles.noShowIconText}>🚫</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.paymentRow}>
+        <Text style={styles.paymentBadge}>
+          {item.payment_method === 'on_pickup' ? '💳 Cartão/Dinheiro na retirada' : '🔑 Pix'}
+          {getOrderTime(item) ? ` · ⏰ ${getOrderTime(item)}` : ''}
+        </Text>
+      </View>
+
+      <Text style={styles.clientPhone}>Cliente: {getClientLabel(item)}</Text>
+
+      <View style={styles.itemsList}>
+        {item.items?.map((prod, i) => (
+          <Text key={i} style={styles.itemRow}>• {prod.quantity}x {prod.name}</Text>
+        ))}
+      </View>
+
+      <View style={styles.cardFooter}>
+        <Text style={styles.totalText}>R$ {item.total?.toFixed(2).replace('.', ',')}</Text>
+
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            item.status === 'ready' && styles.actionButtonPaid,
+            updatingId === item.id && { opacity: 0.5 },
+          ]}
+          onPress={() => advanceStatus(item.id, item.status)}
+          disabled={updatingId === item.id}
+        >
+          <Text style={styles.actionButtonText} numberOfLines={1}>
+            {updatingId === item.id ? 'Atualizando...' : getActionLabel(item.status, item.payment_method)}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+    );
+  };
+
+  // "completed" = já foi marcado como pago/retirado (botão "Pago ✅") — some
+  // da fila pra não acumular pedido antigo empurrando os novos pra baixo e
+  // obrigando o Paulinho a ficar rolando a tela no meio do corre.
+  const activeOrders = orders.filter(o => o.status !== 'completed');
+
+  return (
+    <View style={styles.container}>
+      <Header
+        title="Fila do Paulinho 🧑‍🍳"
+        subtitle={`${activeOrders.length} pedidos na fila`}
+        logo
+        onMenu={() => setMenuVisible(true)}
+      />
+      <AdminDrawerMenu
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        navigation={navigation}
+      />
+
+      {activeOrders.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyEmoji}>🧺</Text>
+          <Text style={styles.emptyText}>Nenhum pedido na fila ainda.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={activeOrders}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+        />
+      )}
+
+      <ConfirmModal
+        visible={!!noShowTarget}
+        title="Cliente não retirou?"
+        message={
+          noShowTarget?.payment_method === 'pix'
+            ? 'Confirma que o cliente não veio buscar esse pedido? Já foi pago via Pix, então só sai da fila — ninguém fica devendo nada.'
+            : 'Confirma que o cliente não veio buscar/pagar esse pedido? A conta dele será bloqueada até quitar ou você perdoar a dívida (aba Bloqueados).'
+        }
+        confirmLabel={noShowLoading ? 'Confirmando...' : 'Confirmar'}
+        danger
+        onCancel={() => !noShowLoading && setNoShowTarget(null)}
+        onConfirm={confirmNoShow}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyEmoji: { fontSize: 40, marginBottom: spacing.sm },
+  emptyText: { color: colors.textSecondary, fontSize: 15 },
+  list: { padding: spacing.lg },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+    ...shadows.card,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  orderId: { fontSize: 16, fontWeight: '900', color: colors.text },
+  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, maxWidth: '55%' },
+  badgeText: { color: colors.surface, fontSize: 12, fontWeight: 'bold' },
+  clientPhone: { fontSize: 14, color: colors.textSecondary, marginBottom: spacing.sm },
+  paymentRow: { marginBottom: spacing.xs },
+  paymentBadge: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  itemsList: {
+    backgroundColor: colors.background,
+    padding: spacing.sm,
+    borderRadius: radii.sm,
+    marginBottom: spacing.sm,
+  },
+  itemRow: { fontSize: 14, color: colors.text, marginBottom: 4 },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  totalText: { fontSize: 18, fontWeight: 'bold', color: colors.primary },
+  actionButton: {
+    backgroundColor: '#1A1A1A',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+    maxWidth: '65%',
+  },
+  // Destaca o botão final ("Pago ✅") em verde — é a ação que tira o pedido
+  // da fila de vez, então vale diferenciar visualmente das outras (que só
+  // avançam o status).
+  actionButtonPaid: {
+    backgroundColor: colors.success,
+  },
+  actionButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 12 },
+  // Ícone pequeno e discreto do "Cliente Não Retirou" — de propósito NÃO
+  // usa a cor de alerta por padrão (só fica vermelho quando pressionado/
+  // depois de liberado seria exagero pra uma ação rara); cinza neutro,
+  // igual aos ícones de ação do Cardápio do admin, pra não competir
+  // visualmente com o botão principal.
+  noShowIconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: radii.full,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noShowIconText: { fontSize: 13 },
+});

@@ -1,0 +1,141 @@
+rules_version = '2';
+
+// Regras de segurança do Firestore para o Sistema Paulinho Pastel (Fase 0).
+//
+// IMPORTANTE: este arquivo precisa ser publicado manualmente no console do
+// Firebase (Firestore Database > Regras) ou via `firebase deploy --only
+// firestore:rules` com o Firebase CLI. Não é aplicado automaticamente só por
+// estar neste repositório.
+//
+// Modelo de papéis: todo usuário autenticado tem um documento em
+// `users/{uid}` com `role: 'client' | 'admin'`. Ninguém pode escrever seu
+// próprio `role` — a promoção para admin é feita manualmente no console do
+// Firebase (ver AuthAdapter.js), nunca pelo próprio app.
+
+function isSignedIn() {
+  return request.auth != null;
+}
+
+// NOTA: usa o literal "(default)" em vez de $(database) de propósito.
+// isAdmin() é declarada FORA do bloco `service cloud.firestore { match
+// /databases/{database}/documents { ... } }` abaixo, e a variável
+// $(database) só existe dentro do escopo desse match — usá-la aqui (fora
+// dele) faz o Firestore rejeitar a regra em tempo de avaliação, negando
+// admin mesmo com o role correto salvo no documento. Bug real encontrado
+// e corrigido em produção (console do Firebase) nesta revisão; mantendo
+// o arquivo do repositório sincronizado com o que está publicado para
+// não reintroduzir o bug num próximo `firebase deploy --only
+// firestore:rules`.
+function isAdmin() {
+  return isSignedIn() &&
+    exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+    get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+}
+
+// Loja aberta/fechada (Fase 3, ver src/adapters/StoreStatusAdapter.js).
+// Documento único store_status/main — se ainda não existe (banco novo,
+// ninguém nunca mexeu no interruptor), o padrão é "aberta", pra essa
+// feature nunca travar pedido sozinha sem o Paulinho ter fechado de
+// propósito. Mesma regra de default replicada no adapter (leitura) e aqui
+// (enforcement de verdade — o client-side dá só pra aviso bonito).
+function isStoreOpen() {
+  return !exists(/databases/(default)/documents/store_status/main) ||
+    get(/databases/(default)/documents/store_status/main).data.open != false;
+}
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Perfil do usuário: cada um só lê/edita o próprio documento,
+    // e nunca pode alterar o próprio campo "role".
+    //
+    // Exceção controlada: quem se cadastra com um dos telefones abaixo (o
+    // mesmo conjunto de ADMIN_PHONES em src/config.js — o número de verdade
+    // do Paulinho + a credencial mestra do time) pode criar o próprio
+    // documento já como "admin" — é assim que se vira admin só de se
+    // cadastrar pelo app, sem promoção manual no console. Qualquer outro
+    // telefone só pode criar como "client"; não dá pra burlar isso direto no
+    // app, porque quem decide é essa regra no servidor, não o código do
+    // cliente.
+    //
+    // Feature "Cliente Não Retirou" (ver docs/feature-bloqueio-no-show.md):
+    // admin também pode LER qualquer documento (precisa pra listar a aba
+    // "Bloqueados", uma query com where('blocked','==',true) que só
+    // funciona se cada doc retornado passar na regra de leitura) e
+    // ATUALIZAR os campos de bloqueio de QUALQUER cliente — mas só esses
+    // campos (hasOnly abaixo), nunca role/name/email/phone de outra conta.
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId &&
+        (request.resource.data.role == 'client' ||
+         (request.resource.data.role == 'admin' &&
+          (request.resource.data.phone == '19987011974' ||
+           request.resource.data.phone == '99999999999')));
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role) ||
+        (isAdmin() && userId != request.auth.uid &&
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['blocked', 'blocked_order_id', 'blocked_order_snapshot', 'blocked_at']))
+      );
+      allow delete: if false;
+    }
+
+    // Cardápio: qualquer pessoa autenticada pode ver; só admin cadastra/edita.
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Pedidos: cliente cria pedido só em seu próprio nome e nunca define o
+    // total/preço diretamente pelo client (isso é recalculado no backend/app
+    // via OrderAdapter antes de chegar aqui). Cliente só lê os próprios
+    // pedidos; admin lê e atualiza status de todos.
+    //
+    // Antifraude (ver docs/feature-antifraude-email.md): contas NOVAS (email
+    // de verdade, não mais o disfarçado telefone@paulinhopastel.com) só
+    // podem criar pedido com o email confirmado (request.auth.token.
+    // email_verified — claim padrão do próprio Firebase Auth, atualizado
+    // depois de um getIdToken(true) no cliente). Contas ANTIGAS (ainda no
+    // email disfarçado) ficam de fora dessa exigência de propósito — ver o
+    // mesmo comentário em AuthAdapter.js/OrderAdapter.js.
+    match /orders/{orderId} {
+      // isStoreOpen() só entra no CREATE — loja fechada impede pedido NOVO,
+      // mas nunca trava o admin de continuar atualizando status de pedidos
+      // já feitos antes de fechar (isso passa pelo allow update, que só
+      // exige isAdmin(), sem essa checagem).
+      allow create: if isSignedIn() && request.resource.data.client_id == request.auth.uid &&
+        (request.auth.token.email.matches('.*@paulinhopastel[.]com$') ||
+         request.auth.token.email_verified == true) &&
+        isStoreOpen();
+      allow read: if isSignedIn() &&
+        (resource.data.client_id == request.auth.uid || isAdmin());
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Tradução pública telefone->email (ver comentário grande em
+    // AuthAdapter.js). Só existe pra permitir login digitando telefone
+    // mesmo com o Auth agora usando o email de verdade como identidade —
+    // não guarda mais nada além disso. Leitura é pública de propósito (é
+    // consultada ANTES do login, sem sessão). Criação só pelo próprio dono
+    // (uid tem que bater com quem está criando), e o documento é imutável
+    // depois de criado (sem isso, alguém poderia "roubar" o telefone de
+    // login de outra conta reescrevendo o documento).
+    match /phone_directory/{phone} {
+      allow read: if true;
+      allow create: if isSignedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['uid', 'email']);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Loja aberta/fechada (Fase 3): qualquer pessoa logada (cliente ou
+    // admin) precisa ler pra saber se pode pedir; só admin liga/desliga.
+    match /store_status/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
