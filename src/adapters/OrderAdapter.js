@@ -1,5 +1,6 @@
 import { db, dbLite, auth } from '../services/firebase';
 import { sendEmailVerification } from 'firebase/auth';
+import { getEmailActionCodeSettings } from './AuthAdapter';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 // SDK Lite (REST avulso, sem canal de streaming) pras operações pontuais —
 // ver comentário em firebase.js. onSnapshot continua no db normal acima,
@@ -60,7 +61,7 @@ export const createOrder = async (cart, paymentMethod = 'pix') => {
       // Reenvio best-effort: o usuário não precisa caçar um botão separado
       // pra pedir de novo, e o próprio Firebase já limita a frequência
       // (auth/too-many-requests) se isso for chamado repetidas vezes rápido.
-      sendEmailVerification(auth.currentUser).catch(() => {});
+      sendEmailVerification(auth.currentUser, getEmailActionCodeSettings()).catch(() => {});
       throw err;
     }
     // Garante que o token usado pelas regras do Firestore já reflete

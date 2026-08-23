@@ -76,6 +76,7 @@ export default function AdminDrawerMenu({ visible, onClose, navigation }) {
 
           <View style={styles.itemsGroup}>
             <DrawerItem emoji="🏪" label="Status da Loja" onPress={() => goTo('AdminStoreStatus')} />
+            <DrawerItem emoji="🔎" label="Buscar Pedido" onPress={() => goTo('AdminOrderSearch')} />
             <DrawerItem emoji="📋" label="Cardápio" onPress={() => goTo('AdminMenu')} />
             <DrawerItem emoji="📊" label="Financeiro" onPress={() => goTo('AdminDashboard')} />
             <DrawerItem emoji="🔒" label="Bloqueados" onPress={() => goTo('AdminBlocked')} />

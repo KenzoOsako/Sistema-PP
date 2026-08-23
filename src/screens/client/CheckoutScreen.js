@@ -50,7 +50,7 @@ export default function CheckoutScreen({ route, navigation }) {
     setLoading(true);
     try {
       await createOrder(cart, 'pix');
-      showAlert('Pedido enviado com sucesso! 🎉', 'Já apitou pro Paulinho. Acompanha o status aqui em Meus Pedidos.');
+      showAlert('Pedido enviado com sucesso! 🎉', 'O Paulinho já foi avisado. Acompanhe o status em Meus Pedidos.');
       navigation.reset({
         index: 0,
         routes: [{ name: 'ClientMenu' }, { name: 'ClientOrders' }],

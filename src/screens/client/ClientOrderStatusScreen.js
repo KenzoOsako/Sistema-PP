@@ -71,7 +71,7 @@ export default function ClientOrderStatusScreen({ navigation }) {
 
   const getStatusText = (status, paymentMethod) => {
     if (status === 'received') return 'Pedido Recebido (Aguardando Confirmação)';
-    if (status === 'preparing') return 'No Fogo 🔥 (Fritando)';
+    if (status === 'preparing') return 'Fritando 🔥';
     if (status === 'ready') return 'Pronto para Retirar ✅';
     if (status === 'completed') return 'Retirado ✅';
     // 'no_show' = marcado como "Cliente Não Retirou" (ver

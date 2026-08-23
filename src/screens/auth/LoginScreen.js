@@ -78,7 +78,7 @@ export default function LoginScreen({ navigation, route }) {
           <Text style={styles.label}>Senha</Text>
           <TextInput
             style={styles.input}
-            placeholder="Sua senha secreta"
+            placeholder="Sua senha"
             placeholderTextColor={colors.placeholder}
             secureTextEntry
             value={password}

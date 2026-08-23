@@ -31,7 +31,7 @@ export default function AdminBlockedScreen({ navigation }) {
     const { user, resolution } = confirmTarget;
     const orderId = user.blocked_order_id || user.blocked_order_snapshot?.order_id;
     if (!orderId) {
-      showAlert('Erro', 'Esse bloqueio não tem um pedido associado — fale com o Felipe.');
+      showAlert('Erro', 'Esse bloqueio não tem um pedido associado. Entre em contato com o suporte técnico.');
       setConfirmTarget(null);
       return;
     }
@@ -102,7 +102,7 @@ export default function AdminBlockedScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <Header
-        title="Bloqueados 🔒"
+        title="Bloqueados"
         subtitle={`${blockedUsers.length} conta(s) bloqueada(s)`}
         onBack={() => navigation.goBack()}
       />

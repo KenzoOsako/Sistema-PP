@@ -7,6 +7,7 @@ import ClientOrderWatcher from './src/components/ClientOrderWatcher';
 
 import LoginScreen from './src/screens/auth/LoginScreen';
 import RegisterScreen from './src/screens/auth/RegisterScreen';
+import EmailVerificationLandingScreen from './src/screens/auth/EmailVerificationLandingScreen';
 import ClientMenuScreen from './src/screens/client/ClientMenuScreen';
 import CartScreen from './src/screens/client/CartScreen';
 import CheckoutScreen from './src/screens/client/CheckoutScreen';
@@ -18,10 +19,37 @@ import AdminMenuScreen from './src/screens/admin/AdminMenuScreen';
 import AdminDashboardScreen from './src/screens/admin/AdminDashboardScreen';
 import AdminBlockedScreen from './src/screens/admin/AdminBlockedScreen';
 import AdminStoreStatusScreen from './src/screens/admin/AdminStoreStatusScreen';
+import AdminOrderSearchScreen from './src/screens/admin/AdminOrderSearchScreen';
 
 const Stack = createNativeStackNavigator();
 
+// ETAPA 3 (23/08/2026) — deep link do e-mail de confirmação: o link que o
+// Firebase manda por e-mail agora aponta pra esta MESMA URL do PWA (ver
+// AuthAdapter.getEmailActionCodeSettings), com `?mode=verifyEmail&
+// oobCode=...` na query string, em vez da página genérica do próprio
+// Firebase. Detectar isso ANTES de montar a navegação normal (em vez de,
+// por exemplo, tentar encaixar como mais uma Stack.Screen) evita qualquer
+// dependência de estado de navegação/autenticação prévio — funciona mesmo
+// se quem clicou no link nunca tinha aberto o app nesse navegador antes.
+// Calculado uma vez só (o valor da URL não muda sem um reload de página, e
+// EmailVerificationLandingScreen já força um reload pra "voltar pro app").
+const emailLinkParams = typeof window !== 'undefined' && window.location
+  ? new URLSearchParams(window.location.search)
+  : null;
+const emailVerifyOobCode = emailLinkParams?.get('mode') === 'verifyEmail'
+  ? emailLinkParams.get('oobCode')
+  : null;
+
 export default function App() {
+  if (emailVerifyOobCode) {
+    return (
+      <SafeAreaProvider>
+        <EmailVerificationLandingScreen oobCode={emailVerifyOobCode} />
+        <AppAlertModal />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <NavigationContainer>
@@ -45,6 +73,7 @@ export default function App() {
           <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
           <Stack.Screen name="AdminBlocked" component={AdminBlockedScreen} />
           <Stack.Screen name="AdminStoreStatus" component={AdminStoreStatusScreen} />
+          <Stack.Screen name="AdminOrderSearch" component={AdminOrderSearchScreen} />
         </Stack.Navigator>
       </NavigationContainer>
       {/* Fica de olho nos pedidos de quem estiver logado o tempo todo,

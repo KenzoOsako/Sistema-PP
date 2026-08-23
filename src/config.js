@@ -25,6 +25,15 @@ export const ADMIN_PHONE = '19987011974';
 // é só um identificador reservado que também vira admin automaticamente ao
 // se cadastrar, do mesmo jeito que ADMIN_PHONE. Cada um escolhe a própria
 // senha no cadastro — ninguém, nem o Claude, guarda ou digita ela.
+//
+// REVISÃO DE SEGURANÇA (23/08/2026): chegou a ser trocado por um número
+// aleatório, mas voltou pra '99999999999' (decisão explícita do Felipe —
+// número fácil de lembrar pro time, e a defesa de verdade é a senha, que
+// ninguém mais sabe). Vale lembrar: quem souber esse número consegue criar
+// uma conta admin nova se souber/adivinhar também a senha de alguém — ou
+// seja, a segurança aqui depende inteiramente da senha ser forte, não do
+// número ser secreto. Se algum dia isso incomodar, é só trocar de novo (e
+// espelhar a troca nas duas linhas de firestore.rules).
 export const ADMIN_MASTER_PHONE = '99999999999';
 
 // Qualquer telefone dessa lista vira admin automaticamente ao se cadastrar.

@@ -85,7 +85,7 @@ export default function AdminFilaScreen({ navigation }) {
     if (status === 'received') {
       return paymentMethod === 'on_pickup' ? 'Novo · Retirada' : 'Novo · Pix';
     }
-    if (status === 'preparing') return 'No Fogo 🔥';
+    if (status === 'preparing') return 'Fritando 🔥';
     if (status === 'ready') return 'Pronto ✅';
     return status;
   };
@@ -198,7 +198,7 @@ export default function AdminFilaScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <Header
-        title="Fila do Paulinho 🧑‍🍳"
+        title="Fila de Pedidos"
         subtitle={`${activeOrders.length} pedidos na fila`}
         logo
         onMenu={() => setMenuVisible(true)}
@@ -262,8 +262,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   orderId: { fontSize: 16, fontWeight: '900', color: colors.text },
-  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, maxWidth: '55%' },
+  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexShrink: 1 },
+  // BUG CORRIGIDO (23/08/2026, achado com print de teste ao vivo): maxWidth
+  // em PORCENTAGEM aqui cortava o texto ("No Fo...") mesmo pra rótulos
+  // curtos — cardHeaderRight não tem uma largura própria fixa (só se ajusta
+  // ao conteúdo dentro de um cardHeader com justify-content:'space-between'),
+  // então "55%" resolvia pra um valor bem menor do que parecia na tela.
+  // Trocado por um valor fixo em px, generoso o bastante pro maior rótulo
+  // real ("Novo · Retirada") sem cortar em nenhum aparelho.
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radii.sm, maxWidth: 170 },
   badgeText: { color: colors.surface, fontSize: 12, fontWeight: 'bold' },
   clientPhone: { fontSize: 14, color: colors.textSecondary, marginBottom: spacing.sm },
   paymentRow: { marginBottom: spacing.xs },

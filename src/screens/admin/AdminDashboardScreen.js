@@ -1,11 +1,31 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { colors, spacing, radii, shadows } from '../../theme';
 import Header from '../../components/Header';
 import { subscribeToOrders } from '../../adapters/OrderAdapter';
 
+// ETAPA 3 (23/08/2026) — filtro de período. Antes só existia "hoje", e o
+// Paulinho comentou que fica difícil enxergar como o negócio foi na última
+// semana/mês sem ficar comparando dia a dia de cabeça. As três opções usam
+// JANELA MÓVEL (últimas N horas/dias a partir de AGORA), não calendário
+// (não é "segunda a domingo" nem "dia 1 ao 30") — mais simples de calcular
+// certo e mais direto de entender: "7 dias" sempre quer dizer os últimos 7
+// dias corridos, não importa em que dia da semana o Paulinho está olhando.
+const PERIODS = [
+  { key: 'today', label: 'Hoje' },
+  { key: 'week', label: '7 dias' },
+  { key: 'month', label: '30 dias' },
+];
+
+const PERIOD_LABELS = {
+  today: 'hoje',
+  week: 'nos últimos 7 dias',
+  month: 'nos últimos 30 dias',
+};
+
 export default function AdminDashboardScreen({ navigation }) {
   const [orders, setOrders] = useState([]);
+  const [period, setPeriod] = useState('today');
 
   useEffect(() => {
     const unsubscribe = subscribeToOrders(setOrders);
@@ -13,15 +33,21 @@ export default function AdminDashboardScreen({ navigation }) {
   }, []);
 
   // Calculos para o Dashboard
-  const isToday = (timestamp) => {
+  const isInPeriod = (timestamp, p) => {
     if (!timestamp?.toDate) return false;
-    return timestamp.toDate().toDateString() === new Date().toDateString();
+    const date = timestamp.toDate();
+    if (p === 'today') return date.toDateString() === new Date().toDateString();
+    const days = p === 'week' ? 7 : 30;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return date >= cutoff;
   };
 
-  // "Pedidos Hoje" = tudo que foi CRIADO hoje, incluindo os marcados como
-  // "Cliente Não Retirou" (ver docs/feature-bloqueio-no-show.md) — é uma
-  // contagem operacional (quantos pedidos entraram), não financeira.
-  const todayOrders = orders.filter(o => isToday(o.created_at));
+  // "Pedidos no período" = tudo que foi CRIADO na janela escolhida,
+  // incluindo os marcados como "Cliente Não Retirou" (ver
+  // docs/feature-bloqueio-no-show.md) — é uma contagem operacional (quantos
+  // pedidos entraram), não financeira.
+  const todayOrders = orders.filter(o => isInPeriod(o.created_at, period));
 
   // Pedidos "no_show" (cliente não retirou/pagou) NÃO contam como venda
   // enquanto a dívida não for resolvida — o dinheiro simplesmente não
@@ -34,12 +60,12 @@ export default function AdminDashboardScreen({ navigation }) {
   // dia da QUITAÇÃO, não no dia original do pedido — por isso filtra por
   // debt_resolved_at e não por created_at, mesmo que o pedido em si seja de
   // outro dia.
-  const paidLateToday = orders.filter(o => o.status === 'no_show' && o.debt_resolved === 'paid' && isToday(o.debt_resolved_at));
+  const paidLateToday = orders.filter(o => o.status === 'no_show' && o.debt_resolved === 'paid' && isInPeriod(o.debt_resolved_at, period));
 
-  // Dívida perdoada hoje (aba Bloqueados → "Perdoar Dívida"): nunca vira
-  // venda, mas o custo do ingrediente já gasto e jogado fora precisa
+  // Dívida perdoada no período (aba Bloqueados → "Perdoar Dívida"): nunca
+  // vira venda, mas o custo do ingrediente já gasto e jogado fora precisa
   // aparecer como prejuízo, também na data em que foi perdoado.
-  const forgivenToday = orders.filter(o => o.status === 'no_show' && o.debt_resolved === 'forgiven' && isToday(o.debt_resolved_at));
+  const forgivenToday = orders.filter(o => o.status === 'no_show' && o.debt_resolved === 'forgiven' && isInPeriod(o.debt_resolved_at, period));
 
   const salesEligible = [...salesToday, ...paidLateToday];
 
@@ -84,13 +110,27 @@ export default function AdminDashboardScreen({ navigation }) {
   });
   const bestSeller = Object.entries(salesByProduct).sort((a, b) => b[1] - a[1])[0];
 
+  const activePeriod = PERIODS.find(p => p.key === period);
+
   return (
     <View style={styles.container}>
-      <Header title="Financeiro Hoje 📊" onBack={() => navigation.goBack()} />
+      <Header title="Financeiro" onBack={() => navigation.goBack()} />
+
+      <View style={styles.periodBar}>
+        {PERIODS.map(p => (
+          <TouchableOpacity
+            key={p.key}
+            style={[styles.periodTab, period === p.key && styles.periodTabActive]}
+            onPress={() => setPeriod(p.key)}
+          >
+            <Text style={[styles.periodTabText, period === p.key && styles.periodTabTextActive]}>{p.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>💰 VENDAS DE HOJE</Text>
+          <Text style={styles.heroLabel}>💰 VENDAS {period === 'today' ? 'DE HOJE' : `(${activePeriod.label.toUpperCase()})`}</Text>
           <Text style={styles.heroValue} numberOfLines={1} adjustsFontSizeToFit>
             R$ {totalSales.toFixed(2).replace('.', ',')}
           </Text>
@@ -117,19 +157,19 @@ export default function AdminDashboardScreen({ navigation }) {
           <View style={[styles.card, styles.statCard]}>
             <Text style={styles.statIcon}>📦</Text>
             <Text style={styles.cardValue}>{todayOrders.length}</Text>
-            <Text style={styles.cardTitle}>Pedidos Hoje</Text>
+            <Text style={styles.cardTitle}>{period === 'today' ? 'Pedidos Hoje' : 'Pedidos no Período'}</Text>
           </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.bestSellerEyebrow}>🏆 MAIS VENDIDO HOJE</Text>
+          <Text style={styles.bestSellerEyebrow}>🏆 MAIS VENDIDO {period === 'today' ? 'HOJE' : activePeriod.label.toUpperCase()}</Text>
           {bestSeller ? (
             <>
               <Text style={styles.bestSellerName} numberOfLines={2}>{bestSeller[0]}</Text>
               <Text style={styles.bestSellerCount}>{bestSeller[1]}x vendidos</Text>
             </>
           ) : (
-            <Text style={styles.bestSellerEmpty}>Nenhuma venda ainda hoje</Text>
+            <Text style={styles.bestSellerEmpty}>Nenhuma venda ainda {PERIOD_LABELS[period]}</Text>
           )}
         </View>
 
@@ -137,7 +177,7 @@ export default function AdminDashboardScreen({ navigation }) {
           <View style={[styles.card, styles.lossCard]}>
             <Text style={styles.lossEyebrow}>⚠️ PREJUÍZO (NÃO COMPARECIMENTO)</Text>
             <Text style={styles.lossValue}>R$ {totalLoss.toFixed(2).replace('.', ',')}</Text>
-            <Text style={styles.lossHint}>Custo de ingrediente de dívidas perdoadas hoje</Text>
+            <Text style={styles.lossHint}>Custo de ingrediente de dívidas perdoadas {PERIOD_LABELS[period]}</Text>
           </View>
         )}
       </ScrollView>
@@ -147,6 +187,27 @@ export default function AdminDashboardScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  periodBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  periodTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: radii.full,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  periodTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  periodTabText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  periodTabTextActive: { color: colors.surface },
   // Sem "flex: 1" aqui, o ScrollView não sabia sua própria altura no web e
   // crescia junto com o conteúdo em vez de rolar internamente — resultado:
   // uma barra de rolagem "extra" (a da página inteira, por fora do app),

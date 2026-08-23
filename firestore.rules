@@ -66,6 +66,11 @@ service cloud.firestore {
     // campos (hasOnly abaixo), nunca role/name/email/phone de outra conta.
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // REVISÃO DE SEGURANÇA (23/08/2026): a credencial mestra do time
+      // (ADMIN_MASTER_PHONE em src/config.js) é '99999999999' de propósito
+      // — número fácil de lembrar pro time; a defesa real é a senha de
+      // cada um, não o número ser secreto. Ver comentário completo em
+      // config.js.
       allow create: if isSignedIn() && request.auth.uid == userId &&
         (request.resource.data.role == 'client' ||
          (request.resource.data.role == 'admin' &&
@@ -104,10 +109,34 @@ service cloud.firestore {
       // mas nunca trava o admin de continuar atualizando status de pedidos
       // já feitos antes de fechar (isso passa pelo allow update, que só
       // exige isAdmin(), sem essa checagem).
+      // REVISÃO DE SEGURANÇA (23/08/2026): antes essa regra só conferia QUEM
+      // podia criar (client_id bate com quem tá logado, email confirmado,
+      // loja aberta) — mas não conferia O QUE estava sendo criado. O
+      // total/itens/status "confiáveis" só existiam porque o app de verdade
+      // (OrderAdapter.createOrder) sempre recalcula tudo antes de gravar,
+      // mas nada aqui impedia alguém de pular o app e escrever direto no
+      // Firestore (as chaves públicas do projeto são sempre visíveis no
+      // bundle web — isso é normal, a defesa real sempre foi esta regra
+      // aqui) um pedido com total inventado, status já "completed", ou
+      // campos extras não previstos. Agora também exige: status sempre
+      // "received" na criação, total numérico não-negativo, pelo menos 1
+      // item, forma de pagamento dentre as duas válidas, e nenhum campo além
+      // dos esperados. NÃO valida se o total bate com o preço real de cada
+      // item (isso exigiria ler cada produto dentro da regra, caro e
+      // complexo) — ainda um passo defensável pra revisitar mais pra frente
+      // se algum dia virar um problema de verdade.
       allow create: if isSignedIn() && request.resource.data.client_id == request.auth.uid &&
         (request.auth.token.email.matches('.*@paulinhopastel[.]com$') ||
          request.auth.token.email_verified == true) &&
-        isStoreOpen();
+        isStoreOpen() &&
+        request.resource.data.status == 'received' &&
+        request.resource.data.total is number && request.resource.data.total >= 0 &&
+        request.resource.data.items is list && request.resource.data.items.size() > 0 &&
+        request.resource.data.payment_method in ['pix', 'on_pickup'] &&
+        request.resource.data.keys().hasOnly([
+          'client_id', 'client_email', 'client_name', 'items', 'total',
+          'status', 'payment_method', 'created_at'
+        ]);
       allow read: if isSignedIn() &&
         (resource.data.client_id == request.auth.uid || isAdmin());
       allow update: if isAdmin();

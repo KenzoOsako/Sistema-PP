@@ -357,7 +357,7 @@ export default function ClientMenuScreen({ navigation, route }) {
         ListEmptyComponent={
           !isMockMenu ? (
             <View style={styles.pausedEmptyState}>
-              <Text style={styles.pausedEmptyText}>Todos os pastéis estão pausados no momento. Volta já já! 🥟</Text>
+              <Text style={styles.pausedEmptyText}>Todos os pastéis estão pausados no momento. Volte em breve!</Text>
             </View>
           ) : null
         }

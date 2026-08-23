@@ -103,7 +103,12 @@ describe('AuthAdapter — cadastro com email real', () => {
     expect(createUserWithEmailAndPassword).toHaveBeenCalledWith(
       expect.anything(), 'novo@gmail.com', 'senha123'
     );
-    expect(sendEmailVerification).toHaveBeenCalledWith(fakeUser);
+    // ETAPA 3: sendEmailVerification agora recebe um 2º argumento
+    // (actionCodeSettings, pro link do e-mail abrir o próprio app — ver
+    // getEmailActionCodeSettings em AuthAdapter.js). No ambiente de teste
+    // (sem window.location de verdade) esse valor é undefined — só no
+    // navegador de verdade vira o objeto com handleCodeInApp/url.
+    expect(sendEmailVerification).toHaveBeenCalledWith(fakeUser, undefined);
     expect(updateProfile).toHaveBeenCalledWith(fakeUser, { displayName: 'Fulano' });
 
     // users/{uid} grava o email de verdade (minúsculo/trim).

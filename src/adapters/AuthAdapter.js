@@ -1,5 +1,5 @@
 import { auth, db, dbLite } from '../services/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile, sendEmailVerification } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile, sendEmailVerification, applyActionCode } from 'firebase/auth';
 // SDK Lite (REST avulso, sem canal de streaming) — ver comentário em firebase.js
 // sobre por que essas leituras/escritas pontuais usam dbLite em vez de db.
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore/lite';
@@ -38,6 +38,35 @@ const isDevAdminPhone = (email) => {
   const digits = (email || '').split('@')[0];
   if (digits === DEV_ADMIN_FIXED_PHONE) return true;
   return digits.length >= 7 && digits.slice(2).startsWith(DEV_ADMIN_PREFIX);
+};
+
+// ETAPA 3 (23/08/2026) — deep link do e-mail de confirmação: antes, o link
+// mandado por sendEmailVerification abria uma página GENÉRICA hospedada
+// pelo próprio Firebase (fora do app, sem a cara do Paulinho Pastel, e sem
+// trazer o cliente de volta pro app depois). Com `handleCodeInApp: true` e
+// uma `url` apontando pro próprio PWA, o Firebase monta o link do e-mail
+// apontando pra CÁ (com `?mode=verifyEmail&oobCode=...` na query string) em
+// vez da página genérica — é a própria tela do app (ver
+// EmailVerificationLandingScreen.js, montada direto em App.js quando esses
+// parâmetros aparecem na URL) que aplica o código e confirma.
+//
+// Só faz sentido no WEB (é o PWA que está publicado — ver briefing do
+// projeto): `window` não existe em React Native puro (iOS/Android nativo),
+// então em qualquer outro ambiente isso volta pro comportamento padrão do
+// Firebase (undefined = sem actionCodeSettings).
+export const getEmailActionCodeSettings = () => {
+  // No ambiente de teste (Jest) `window` existe como objeto vazio (mock do
+  // próprio jest-expo), mas sem `window.location` de verdade — por isso a
+  // checagem confere os dois, não só `typeof window`. Achado rodando o
+  // teste de verdade (`npm test`), não só lendo código: sem o segundo
+  // `&& window.location`, isso quebrava com "Cannot read properties of
+  // undefined (reading 'origin')" no meio do cadastro, dentro do próprio
+  // Jest.
+  if (typeof window === 'undefined' || !window.location) return undefined;
+  return {
+    url: window.location.origin + '/',
+    handleCodeInApp: true,
+  };
 };
 
 // SEGURANÇA/ANTIFRAUDE (ver docs/feature-antifraude-email.md): a partir
@@ -115,7 +144,7 @@ export const register = async ({ name, email, phone, password }) => {
   // só registramos um aviso no console e seguimos o fluxo de sucesso
   // normalmente, em vez de mostrar "erro" pra uma conta que já foi criada.
   try {
-    await withTimeout(sendEmailVerification(credential.user), 25000);
+    await withTimeout(sendEmailVerification(credential.user, getEmailActionCodeSettings()), 25000);
   } catch (e) {
     console.warn('Email de verificação demorou/falhou ao enviar, mas a conta foi criada:', e.message);
   }
@@ -194,7 +223,25 @@ export const register = async ({ name, email, phone, password }) => {
 // não precisamos implementar nosso próprio rate-limit aqui.
 export const resendVerificationEmail = async () => {
   if (!auth.currentUser) throw new Error('Nenhum usuário logado.');
-  return withTimeout(sendEmailVerification(auth.currentUser));
+  return withTimeout(sendEmailVerification(auth.currentUser, getEmailActionCodeSettings()));
+};
+
+// Completa a confirmação de e-mail a partir do link clicado (ver
+// EmailVerificationLandingScreen.js). `oobCode` vem da URL
+// (?mode=verifyEmail&oobCode=...) que o próprio Firebase gerou e mandou por
+// e-mail — aplicá-lo é o que de fato marca email_verified: true na conta.
+//
+// Se este MESMO navegador/aba já tiver uma sessão logada (o caso mais
+// comum: a pessoa clicou no link no mesmo aparelho onde se cadastrou, só
+// que numa aba nova que o app de e-mail abriu), atualiza essa sessão também
+// — sem isso, a aba original ficaria "presa" achando que o email ainda não
+// foi confirmado até o usuário fazer login de novo.
+export const completeEmailVerificationFromLink = async (oobCode) => {
+  await withTimeout(applyActionCode(auth, oobCode));
+  if (auth.currentUser) {
+    try { await auth.currentUser.reload(); } catch (e) { /* segue mesmo assim */ }
+    try { await auth.currentUser.getIdToken(true); } catch (e) { /* regra rejeita se o token ainda tiver velho */ }
+  }
 };
 
 // Recarrega o usuário atual do Firebase Auth (pega o emailVerified mais

@@ -52,7 +52,7 @@ export default function CartScreen({ route, navigation }) {
       await createOrder(cart, 'on_pickup');
       showAlert(
         'Pedido enviado com sucesso! 🎉',
-        'Já está na fila do Paulinho. Pague com cartão ou dinheiro na retirada — acompanha o status aqui em Meus Pedidos.'
+        'Já está na fila de pedidos. Pague com cartão ou dinheiro na retirada — acompanhe o status em Meus Pedidos.'
       );
       // Carrinho esvazia depois de um pedido enviado com sucesso — senão o
       // cliente volta pro Cardápio e o footer ainda mostra os itens que já
