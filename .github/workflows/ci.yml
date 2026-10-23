@@ -1,43 +1,38 @@
-name: Full-Stack CI/CD Gatekeeper
+name: Application tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, 'codex/**']
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: application-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  audit-and-test:
-    name: Zero-Trust Codebase Audit
+  test:
+    name: Jest (${{ matrix.application }})
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        application: ['.', 'paulinho-pastel-app']
     defaults:
       run:
-        working-directory: paulinho-pastel-app
-
+        working-directory: ${{ matrix.application }}
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js Environment
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-        cache: 'npm'
-        cache-dependency-path: 'paulinho-pastel-app/package-lock.json'
-
-    - name: Install Dependencies (Legacy Peer Resolution)
-      run: npm ci --legacy-peer-deps
-
-    - name: Execute Recursive Testing Loop (Jest)
-      run: npm test
-
-    - name: Boundary Verification Status
-      if: success()
-      run: echo "Zero-Trust Architecture Confirmed. No regressions detected."
-
-    - name: Recursive Gatekeeper Lock
-      if: failure()
-      run: |
-        echo "::error::Recursive Audit Failed. Boundary or DOM memory regression detected."
-        exit 1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ${{ matrix.application }}/package-lock.json
+      - run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - run: npm test -- --runInBand --roots src
