@@ -47,10 +47,21 @@ A CI instala e executa Jest separadamente na raiz e em `paulinho-pastel-app/`, c
 
 ## Antes de usar com pessoas ou dados reais
 
+As dependências das duas aplicações foram atualizadas dentro das faixas
+compatíveis, sem `audit --force`, e o Vitest não utilizado foi removido.
+Na verificação de 27/10/2026, `npm audit` passou de 24 pacotes afetados
+(um crítico) para oito alertas altos por aplicação, sem críticos. O resultado
+não equivale à segurança completa do produto: permanecem árvores de gRPC
+exigidas pelo Firebase, Zod 3 exigido pelo Expo CLI e image-size exigido por
+ferramentas de build. Corrigir tudo exige versões upstream compatíveis ou
+uma migração avaliada separadamente; os downgrades incompatíveis sugeridos
+por `audit --force` não foram aplicados. Não use o protótipo com dados reais
+antes de avaliar esses riscos e as regras Firebase.
+
 - Validar a configuração Firebase da versão escolhida e testar autorização com contas fictícias e regras correspondentes. Não publicar regras ou alterar papéis automaticamente durante esta organização.
 - Conferir a configuração Pix localmente. Gerar um QR Code não confirma recebimento ou liquidação do pagamento.
 - Verificar índices, fluxo de cadastro, confirmação de e-mail, perfis de cliente/admin e notificações no ambiente de teste.
-- O README anterior relata exposição histórica de um token do Notion. A remoção de `.env` da versão atual não revoga credenciais nem limpa o histórico. A rotação precisa ser confirmada pelo responsável; ela não foi verificada nesta revisão.
+- O responsável confirmou a rotação do token Notion com revogação imediata no Gate 1. `.env` foi removido do HEAD e do histórico publicado no Gate 3, com verificação por clone novo. A purga global de objetos/caches antigos solicitada ao GitHub e a coordenação de clones existentes continuam sem confirmação; remover um arquivo, por si só, não revoga uma credencial.
 - Não versionar credenciais, arquivos locais de ambiente, caches Firebase ou builds. `.env.example` contém somente um campo vazio para a automação Notion; não representa toda a configuração do aplicativo.
 
 O [guia anterior](docs/legacy-setup.md) foi preservado para consulta histórica. Suas versões, contagens de testes e instruções de demonstração não devem ser tomadas como estado atual sem verificação.
