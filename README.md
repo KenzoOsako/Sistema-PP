@@ -1,50 +1,73 @@
-# Paulinho Pastel — App (Fase 0)
+# Sistema-PP — Paulinho Pastel
 
-Protótipo de atendimento (cliente + admin) para o Paulinho Pastel. React Native + Expo, Firebase (Auth + Firestore).
+Protótipo de atendimento para clientes e administração, desenvolvido com React Native, Expo, Firebase Authentication e Firestore.
 
-## Pré-requisitos
+O repositório contém **duas versões divergentes da aplicação**: uma na raiz e outra em `paulinho-pastel-app/`. Elas não são equivalentes. Esta documentação torna essa situação explícita; não elimina versões, não migra dados e não muda o ambiente Firebase.
 
-- Node.js 18+ instalado
-- Um celular com o app **Expo Go** instalado (Android: Play Store / iOS: App Store) — mais rápido para testar do que gerar APK
-- Celular e computador na **mesma rede Wi-Fi**
+## Onde está cada parte
 
-## Rodando localmente
+| Caminho | Conteúdo |
+| --- | --- |
+| `App.js`, `src/` | Aplicação da raiz, com funcionalidades ausentes da cópia interna |
+| `paulinho-pastel-app/` | Segunda versão, testada em um job separado |
+| `firestore.rules`, `firestore.indexes.json` | Regras e índices da versão da raiz |
+| `docs/` | Requisitos, decisões e documentação de funcionalidades |
+| `.github/workflows/ci.yml` | Jobs independentes de testes para raiz e cópia interna |
 
-```bash
-cd paulinho-pastel-app
-npm install --legacy-peer-deps
-npx expo start
-```
+O [mapa de divergências](docs/repository-layout.md) registra os arquivos que precisam ser reconciliados antes de consolidar o projeto.
 
-Isso abre um QR Code no terminal. Escaneie com a câmera do celular (iOS) ou pelo app Expo Go (Android) — o app abre direto, sem precisar instalar nada além do Expo Go.
+## Instalação e desenvolvimento
 
-> `--legacy-peer-deps` é necessário por causa de conflitos de peer dependency entre o Expo SDK 57 e algumas libs de teste — não afeta o app em si, só a instalação.
+Use Node.js 24, versão adotada pela CI. A documentação oficial do [Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/) informa Node.js 22.13.x como mínimo. O antigo requisito Node 18+ e a configuração anterior de CI em Node 20 não atendiam a esse mínimo.
 
-## Rodando os testes
-
-```bash
-npx jest
-```
-
-Devem passar 3 suítes / 6 testes (adapter de pedidos, tela de cardápio, gerador de payload Pix).
-
-## ⚠️ Antes de qualquer demonstração real
-
-1. **Chave Pix**: edite `src/config.js` e troque `CHAVE_PIX_DO_PAULINHO_AQUI` pela chave Pix real dele. Sem isso, o QR Code gerado é estruturalmente válido mas aponta para uma chave inexistente — não vai cair dinheiro nenhum.
-2. **Firestore Rules**: publique o conteúdo de `firestore.rules` no console do Firebase (Firestore Database → Regras) ou via `firebase deploy --only firestore:rules`. Sem isso, dependendo do modo do projeto, o banco pode estar público demais (qualquer um lê/escreve) ou fechado demais (nada funciona).
-3. **Índice do Firestore**: publique `firestore.indexes.json` (`firebase deploy --only firestore:indexes`) ou crie manualmente no console. Sem isso, a tela "Meus Pedidos" do cliente vai quebrar com um erro de índice ausente na primeira vez que rodar — teste esse fluxo especificamente antes da reunião.
-4. **Conta admin**: crie uma conta normal pelo app (registro com telefone/senha), depois vá no console do Firebase → Firestore → coleção `users` → ache o documento pelo `uid` dessa conta → mude o campo `role` de `"client"` para `"admin"` manualmente. É assim que uma conta vira admin agora (antes era só digitar "999", o que foi removido por segurança).
-5. **Rotacionar o token do Notion**: o `.env` com o token antigo esteve commitado publicamente neste repositório. Gere um novo token nas integrações do Notion antes de reusar qualquer automação que dependa dele.
-
-## Gerando um APK para instalar direto (sem Expo Go)
-
-Para o fluxo real da demo (QR Code no trailer → download do APK), use o EAS Build:
+Para trabalhar na aplicação da raiz:
 
 ```bash
-npm install -g eas-cli
-eas login
-eas build:configure
-eas build --platform android --profile preview
+git clone https://github.com/KenzoOsako/Sistema-PP.git
+cd Sistema-PP
+npm ci --legacy-peer-deps
+npm run start
 ```
 
-Isso gera um link de download do `.apk` ao final do build (roda na nuvem da Expo, leva alguns minutos). Esse é o link que vai virar QR Code para o Paulinho escanear.
+Os scripts `web`, `android` e `ios` iniciam os fluxos do Expo. Dependem de navegador, emulador ou dispositivo e das ferramentas compatíveis com o SDK. `build:web` exporta a versão web e aplica o ajuste PWA em `scripts/patch-pwa-html.js`.
+
+Para reproduzir o job da cópia interna, entre em `paulinho-pastel-app/` antes de instalar e testar. Não misture código de uma versão com regras, configuração ou artefatos da outra.
+
+## Testes e limites
+
+Os testes existentes exercitam adaptadores de autenticação/pedidos, componentes do cardápio e geração de payload Pix, com dependências Firebase simuladas.
+
+Execute em cada diretório de aplicação. `--roots src` restringe o Jest àquela versão, evitando descoberta recursiva e colisão com o manifesto da outra cópia:
+
+```bash
+npm test -- --runInBand --roots src
+```
+
+A CI instala e executa Jest separadamente na raiz e em `paulinho-pastel-app/`, com permissões de leitura e actions fixadas por SHA. Os 17 testes da raiz passaram localmente em Node.js 24. Os testes de cardápio ainda emitem avisos de `act()`/atualizações assíncronas; eles precisam de revisão, e um resultado verde não os elimina. A aprovação de ambos os jobs não comprova segurança das regras Firestore, pagamentos, notificações ou funcionamento em produção.
+
+## Antes de usar com pessoas ou dados reais
+
+As dependências das duas aplicações foram atualizadas dentro das faixas
+compatíveis, sem `audit --force`, e o Vitest não utilizado foi removido.
+Na verificação de 27/10/2026, `npm audit` passou de 24 pacotes afetados
+(um crítico) para oito alertas altos por aplicação, sem críticos. O resultado
+não equivale à segurança completa do produto: permanecem árvores de gRPC
+exigidas pelo Firebase, Zod 3 exigido pelo Expo CLI e image-size exigido por
+ferramentas de build. Corrigir tudo exige versões upstream compatíveis ou
+uma migração avaliada separadamente; os downgrades incompatíveis sugeridos
+por `audit --force` não foram aplicados. Não use o protótipo com dados reais
+antes de avaliar esses riscos e as regras Firebase.
+
+- Validar a configuração Firebase da versão escolhida e testar autorização com contas fictícias e regras correspondentes. Não publicar regras ou alterar papéis automaticamente durante esta organização.
+- Conferir a configuração Pix localmente. Gerar um QR Code não confirma recebimento ou liquidação do pagamento.
+- Verificar índices, fluxo de cadastro, confirmação de e-mail, perfis de cliente/admin e notificações no ambiente de teste.
+- O responsável confirmou a rotação do token Notion com revogação imediata no Gate 1. `.env` foi removido do HEAD e do histórico publicado no Gate 3, com verificação por clone novo. A purga global de objetos/caches antigos solicitada ao GitHub e a coordenação de clones existentes continuam sem confirmação; remover um arquivo, por si só, não revoga uma credencial.
+- Não versionar credenciais, arquivos locais de ambiente, caches Firebase ou builds. `.env.example` contém somente um campo vazio para a automação Notion; não representa toda a configuração do aplicativo.
+
+O [guia anterior](docs/legacy-setup.md) foi preservado para consulta histórica. Suas versões, contagens de testes e instruções de demonstração não devem ser tomadas como estado atual sem verificação.
+
+## Próxima etapa de organização
+
+Reproduzir os testes das duas versões separadamente, verificar suas regras e funcionalidades, decidir a versão canônica e só então consolidar com regressões e revisão. Não há equivalência comprovada; esta PR não remove nenhuma das duas aplicações.
+
+A [licença MIT](LICENSE) permanece preservada. O conteúdo de projetos da organização Profit-LTDA não foi copiado para este repositório.
